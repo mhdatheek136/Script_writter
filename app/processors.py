@@ -4,7 +4,7 @@ import json
 import logging
 import subprocess
 import re
-import shutil  # ✅ needed for shutil.which
+import shutil
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import google.generativeai as genai
@@ -417,24 +417,24 @@ class SlideProcessor:
         styles = {
             "Human-like": """**Narration Style: Human-like**
 Write as if you're speaking naturally to an audience:
-- Use conversational transitions: "Now, let's look at...", "Moving forward...", "This brings us to..."
-- Add natural connectives between slides: "Building on that idea...", "Following up on this point..."
-- Reference specific points: "As you can see here...", "Notice how...", "This slide shows us..."
+- Use conversational transitions
+- Add natural connectives between slides
+- Reference specific points
 - Explain rather than just repeat: Don't read bullet points verbatim, explain their meaning
 - Use natural pauses indicated by paragraph breaks for longer content
 - Make it sound like you're genuinely reading and explaining the slides""",
             "Formal": """**Narration Style: Formal**
 Write in a formal, structured manner:
-- Use formal transitions: "We will now examine...", "Proceeding to...", "Let us consider..."
+- Use formal transitions
 - Maintain professional language throughout
 - Avoid contractions and casual expressions
-- Use structured transitions: "Furthermore...", "Moreover...", "In addition..."
+- Use structured transitions
 - Present information systematically and authoritatively
 - Keep transitions professional and clear""",
             "Concise": """**Narration Style: Concise**
 Write brief, to-the-point narration:
 - Get straight to the point, avoid unnecessary words
-- Use direct transitions: "Next...", "Moving to...", "Now..."
+- Use direct transitions
 - Focus on key points only
 - Keep sentences short and clear
 - Minimize filler words and phrases
@@ -442,21 +442,21 @@ Write brief, to-the-point narration:
             "Storytelling": """**Narration Style: Storytelling**
 Write as a narrative that tells a story:
 - Create a narrative arc across slides
-- Use storytelling transitions: "Our journey begins with...", "As the story unfolds...", "This brings us to a pivotal moment..."
+- Use storytelling transitions
 - Build connections between slides like chapters in a story
 - Use descriptive language to paint a picture
-- Create anticipation: "What we'll discover next...", "This sets the stage for..."
+- Create anticipation
 - Make the presentation feel like a cohesive narrative""",
             "Conversational": """**Narration Style: Conversational**
 Write in a friendly, approachable conversational style:
 - Use casual, friendly transitions
-- Include rhetorical questions
+- Include rhetorical questions (Do not overuse rhetorical questions)
 - Use everyday language and relatable examples
 - Create a dialogue feel
 - Make transitions feel like natural conversation flow""",
             "Professional": """**Narration Style: Professional**
 Write in a polished, business-appropriate style:
-- Use professional transitions: "We'll now explore...", "Turning our attention to...", "Let's examine..."
+- Use professional transitions
 - Maintain a balanced, confident tone
 - Use clear, structured language
 - Include appropriate business terminology
@@ -469,12 +469,12 @@ Write in a polished, business-appropriate style:
         """Get length-specific instructions."""
         if dynamic_length:
             return """**Dynamic Length**: Adjust the narration length based on slide content complexity.
-- You are responsible for determining the slide’s complexity before writing the narration
-- Simple slides (low complexity): 50–100 words, concise and clear
-- Medium complexity slides: 100–150 words, with added explanation
-- Complex slides (high complexity): 150–200 words, structured into multiple paragraphs if needed
+- You are responsible for determining the current slide's complexity before writing the narration based on speaker notes and rewritten slide content.
+- Simple slides (low complexity): 50-100 words, concise and clear
+- Medium complexity slides: 100-150 words, with added explanation
+- Complex slides (high complexity): 150-200 words, structured into multiple paragraphs if needed
 - Use the Content Complexity indicator to guide narration length
-- For longer narrations, only when necessary use 200-400 words), split into 2–3 paragraphs using "\\n\\n" (double newline)
+- For longer narrations, only when necessary use 200-400 words), split into 2-3 paragraphs using "\\n\\n" (double newline)
 - Never exceed 400 words under any circumstances
 """
 
@@ -508,20 +508,23 @@ Write in a polished, business-appropriate style:
 
 - Make it structured, clear, and concise (max {max_words} words)
 - Explain the slide content meaningfully.
-- Focus on explaining diagrams and tables. Only include and describe those that are directly useful and relevant to the main information. Ignore images, icons, or visuals used solely for aesthetics
+- Focus on explaining things that contain text such as charts, tables, lists, etc. 
+- Only describe those that are directly useful and relevant to the main information. Ignore images, icons, or visuals used solely for aesthetics (Example: a company logo, a chart with no data, a company related picture, etc.)
 - Maintain the key information and meaning
 - Tone: {tone}
 - Audience: {audience_level}
 - Slide number: {slide_number}
 
-- Return your response as a JSON object with exactly this key:
+CRITICAL JSON RESPONSE REQUIREMENTS:
+- Return your response as a JSON object with exactly this structure:
 {{
     "rewritten_content": "narration script explaining slide content here"
 }}
 
-- CRITICAL:
-- Only return valid JSON, no markdown formatting or additional text
-- The "rewritten_content" value must be plain text only – NO markdown formatting, NO markdown syntax (no **, *, _, #, [], etc.), NO special formatting characters. Use only plain text"""
+- The "rewritten_content" value must be plain text only - NO markdown formatting, NO markdown syntax (no **, *, _, #, [], etc.), NO special formatting characters
+- IMPORTANT: Do NOT use double quotes (") inside the rewritten_content string - use single quotes (') if you need to quote something, or rephrase to avoid quotes entirely
+- Escape any special JSON characters properly
+- Only return valid JSON, no markdown formatting or additional text outside the JSON object"""
 
 
             # Call Gemini with image (PIL Image object)
@@ -702,7 +705,7 @@ Write in a polished, business-appropriate style:
         dynamic_length: bool,
     ) -> str:
         """
-        Generate narration for ONE slide only, using only the past 3 narrations as context.
+        Generate narration for ONE slide only, using only the past narrations as context.
         Returns narration as plain text (single string).
         """
         slide_number = slide_index + 1
@@ -713,15 +716,19 @@ Write in a polished, business-appropriate style:
         complexity = self._compute_complexity_label(slide_content, speaker_notes)
         per_slide_hint = self._length_target_hint(dynamic_length, complexity)
 
-        # Only last 5 narrations as requested
+        # Use all available previous narrations (up to 5 as requested in the prompt)
         prev_narrations = (prev_narrations or [])[-5:]
 
         if prev_narrations:
-            prev_block = "\n\n".join(
-                [f"- Prior narration {len(prev_narrations) - i}: {n}" for i, n in enumerate(prev_narrations)]
-            )
+            # Build context block with slide references
+            context_lines = []
+            for i, narration in enumerate(prev_narrations):
+                # Calculate which slide this narration came from
+                context_slide_num = slide_number - len(prev_narrations) + i
+                context_lines.append(f"- Slide {context_slide_num} narration: {narration}")
+            prev_block = "\n".join(context_lines)
         else:
-            prev_block = "[None]"
+            prev_block = "[No previous narrations available]"
 
         needs_opening_connection = slide_number != 1
         needs_closing_transition = slide_number != total_slides
@@ -735,7 +742,7 @@ Write in a polished, business-appropriate style:
 Tone: Maintain a {tone} tone throughout.
 
 IMPORTANT CONTEXT RULES:
-- You may ONLY use the past 5 narrations provided below as cross-slide context.
+- You may ONLY use the past narrations provided below as cross-slide context.
 - Do NOT invent, reference, or imply any other slides beyond what is provided.
 - Generally avoid repeating the same phrases, sentence structures, or opening flows from previous narrations.
 - Reuse wording from past narrations only when it is necessary for clarity or continuity, and do not overuse it.
@@ -745,7 +752,7 @@ Past narrations (most recent last):
 
 Current slide to narrate:
 - Slide number: {slide_number} of {total_slides}
-- Rewritten Content:
+- Rewritten Content (This is the explantion of the content of the current slide):
 {slide_content}
 - Speaker Notes:
 {speaker_notes}
@@ -767,8 +774,7 @@ CRITICAL:
 - The narration must be plain text only 
 - NO markdown formatting, NO markdown syntax (no **, *, _, #, [], (), etc.), NO code blocks. 
 - If you need paragraph breaks, represent them using the two-character sequence \\n\\n (backslash-n-backslash-n) inside the JSON string. 
-- Do NOT include literal newlines or literal tabs inside the JSON string value (they must be escaped as \\n and \\t).
-"""
+- Do NOT include literal newlines or literal tabs inside the JSON string value (they must be escaped as \\n and \\t)."""
 
         logger.info(f"Calling Gemini API for narration (slide {slide_number}/{total_slides})...")
         response = self.model.generate_content(prompt)
@@ -817,14 +823,15 @@ CRITICAL:
                 slide_content = slide.get("rewritten_content", "") or ""
                 speaker_notes = slide.get("speaker_notes", "") or ""
 
-                prev_3 = processed_narrations[-3:]  # ONLY past 3 narrations as context
+                # Get only the past 5 narrations for context (or fewer if not enough yet)
+                prev_narrations = processed_narrations[-5:]
 
                 narration = self._generate_single_slide_narration(
                     slide_index=i,
                     total_slides=total,
                     slide_content=slide_content,
                     speaker_notes=speaker_notes,
-                    prev_narrations=prev_3,
+                    prev_narrations=prev_narrations,
                     tone=tone,
                     narration_style=narration_style,
                     dynamic_length=dynamic_length,
