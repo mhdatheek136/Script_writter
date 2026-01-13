@@ -39,7 +39,7 @@ EXPOSE 8000
 FROM backend-base AS production
 USER appuser
 # Needs gunicorn in requirements.txt
-CMD ["sh", "-c", "gunicorn app.main:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120"]
+CMD ["sh", "-c", "gunicorn app.main:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8000} --workers 1 --timeout 600 --graceful-timeout 600"]
 
 # ---------- Development target ----------
 # FROM backend-base AS development
