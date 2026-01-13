@@ -1,16 +1,31 @@
-version: '3.8'
-
 services:
   app:
-    build: .
+    build:
+      context: .
+      target: production
     ports:
       - "8001:8000"
+    env_file:
+      - .env
     environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
-      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
-      - MAX_SLIDES=${MAX_SLIDES:-30}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+      MAX_SLIDES: ${MAX_SLIDES:-30}
+    restart: unless-stopped
+
+  app-dev:
+    build:
+      context: .
+      target: production
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    environment:
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+      MAX_SLIDES: ${MAX_SLIDES:-30}
     volumes:
       - ./app:/app/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    restart: unless-stopped
+    profiles: ["dev"]

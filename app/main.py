@@ -276,7 +276,7 @@ async def generate_output(
         if not generated_filename:
             raise HTTPException(status_code=400, detail="Invalid format or generation failed")
             
-        file_path = Path("temp_outputs") / generated_filename
+        file_path = temp_output_dir / generated_filename
         
         return FileResponse(
             path=file_path,
@@ -292,7 +292,7 @@ async def generate_output(
 @app.get("/api/download/{filename}")
 async def download_file(filename: str):
     """Download a generated file."""
-    file_path = Path("temp_outputs") / filename
+    file_path = temp_output_dir / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
@@ -321,11 +321,13 @@ async def serve_frontend(rest_of_path: str):
     raise HTTPException(status_code=404, detail="Not Found")
 
 # Create directories
-temp_output_dir = Path("temp_outputs")
-temp_output_dir.mkdir(exist_ok=True)
+BASE_TMP = Path(os.getenv("TEMP_BASE_DIR", "/tmp"))
 
-temp_upload_dir = Path("temp_uploads")
-temp_upload_dir.mkdir(exist_ok=True)
+temp_output_dir = BASE_TMP / "temp_outputs"
+temp_output_dir.mkdir(parents=True, exist_ok=True)
+
+temp_upload_dir = BASE_TMP / "temp_uploads"
+temp_upload_dir.mkdir(parents=True, exist_ok=True)
 
 
 def cleanup_old_files():
