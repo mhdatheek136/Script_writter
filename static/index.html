@@ -17,7 +17,7 @@
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <button class="new-btn" onclick="window.location.reload()">
+                <button class="new-btn" id="newPresentationBtn">
                     <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -78,6 +78,15 @@
                     </div>
 
                     <div class="sidebar-section">
+                        <label class="section-label" for="custom_instructions">Custom Instructions</label>
+                        <div class="setting-group">
+                            <textarea id="custom_instructions" name="custom_instructions"
+                                placeholder="E.g. Focus on ROI, keep it very energetic, or mention the upcoming Q3 goals..."
+                                rows="3" class="sidebar-textarea"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
                         <label class="section-label">Refinement</label>
                         <div class="checkbox-item tooltip-container">
                             <input type="checkbox" id="include_speaker_notes" name="include_speaker_notes" checked>
@@ -102,6 +111,7 @@
                         </div>
                     </div>
 
+
                     <div id="fixed_length_container" style="display: none;" class="sidebar-section">
                         <div class="setting-group">
                             <label for="min_words">Min Words</label>
@@ -113,6 +123,7 @@
                                 max="400">
                         </div>
                     </div>
+
 
                     <div class="sidebar-footer">
                         <button type="submit" id="processBtn" class="process-btn">
@@ -159,6 +170,29 @@
 
                 <!-- Results -->
                 <div id="results" class="hidden">
+                    <!-- Global Rewrite Banner -->
+                    <div id="global-rewrite-container" class="global-rewrite-banner">
+                        <div class="banner-content">
+                            <div class="banner-header">
+                                <h3>Global Script Refinement</h3>
+                            </div>
+                            <p>Apply changes to all slides at once while maintaining context and flow.</p>
+                            <div class="banner-input-group">
+                                <textarea id="global_rewrite_request"
+                                    placeholder="E.g., 'Make it sound more like a TED Talk', 'Ensure every slide ends with a summary', or 'Use simpler language'..."
+                                    rows="2"></textarea>
+                                <button type="button" id="globalRewriteBtn" class="banner-submit-btn">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor"
+                                        stroke-width="2" fill="none">
+                                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                    </svg>
+                                    Apply to All Slides
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="results-toolbar">
                         <div class="toolbar-left">
                             <h2>Transcribed Script</h2>
@@ -191,6 +225,24 @@
                 <div id="error" class="error-box hidden"></div>
             </div>
         </main>
+    </div>
+
+    <!-- Custom Modal -->
+    <div id="custom-modal" class="modal-overlay hidden">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div class="modal-icon">⚠️</div>
+                <h3 id="modal-title">Reset Presentation?</h3>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message">All current progress and generated narrations will be permanently lost. Are you
+                    sure you want to start a new presentation?</p>
+            </div>
+            <div class="modal-footer">
+                <button id="modal-cancel" class="modal-btn secondary">Cancel</button>
+                <button id="modal-confirm" class="modal-btn danger">Yes, Reset Everything</button>
+            </div>
+        </div>
     </div>
 
     <script src="/static/script.js"></script>

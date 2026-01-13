@@ -41,13 +41,13 @@ class SlideProcessor:
         pptx_path: Path,
         tone: str,
         audience_level: str,
-
         narration_style: str = "Human-like",
         dynamic_length: bool = True,
         include_speaker_notes: bool = True,
         enable_polishing: bool = True,
         min_words: Optional[int] = None,
         max_words_fixed: Optional[int] = None,
+        custom_instructions: Optional[str] = None,
     ) -> Dict:
         """
         Main processing pipeline: convert PPTX, process slides, generate narration.
@@ -58,6 +58,8 @@ class SlideProcessor:
             logger.info(f"File: {pptx_path}")
             logger.info(f"Tone: {tone}, Audience: {audience_level}")
             logger.info(f"Style: {narration_style}, Dynamic: {dynamic_length}, Polish: {enable_polishing}")
+            if custom_instructions:
+                logger.info(f"Custom Instructions: {custom_instructions}")
             logger.info("=" * 60)
             
             # self.temp_files.append(pptx_path) - Do not delete input file, let caller handle it
@@ -110,6 +112,7 @@ class SlideProcessor:
                 tone,
                 narration_style=narration_style,
                 dynamic_length=dynamic_length,
+                custom_instructions=custom_instructions
             )
 
             if len(narration_paragraphs) != len(slide_results):

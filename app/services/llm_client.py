@@ -154,6 +154,7 @@ class LLMClient:
         tone: str,
         narration_style: str = "Human-like",
         dynamic_length: bool = True,
+        custom_instructions: Optional[str] = None,
     ) -> List[str]:
         """
         Generate narration for all slides using sequential processing.
@@ -178,6 +179,7 @@ class LLMClient:
                     tone=tone,
                     narration_style=narration_style,
                     dynamic_length=dynamic_length,
+                    custom_instructions=custom_instructions,
                 )
 
                 narrations.append(narration)
@@ -200,6 +202,7 @@ class LLMClient:
         tone: str,
         narration_style: str,
         dynamic_length: bool,
+        custom_instructions: Optional[str] = None,
     ) -> str:
         """
         Generate narration for ONE slide only, using only the past narrations as context.
@@ -233,6 +236,10 @@ class LLMClient:
             else "Do NOT add a transition to a next slide; close the narration naturally."
         )
 
+        custom_block = ""
+        if custom_instructions and custom_instructions.strip():
+            custom_block = f"\nADDITIONAL CUSTOM INSTRUCTIONS:\n{custom_instructions}\n"
+
         prompt = NARRATION_GENERATION_PROMPT.format(
             narration_style_lower=narration_style.lower(),
             style_instructions=style_instructions,
@@ -243,7 +250,8 @@ class LLMClient:
             total_slides=total_slides,
             slide_content=slide_content,
             speaker_notes=speaker_notes,
-            closing_transition_instruction=closing_transition_instruction
+            closing_transition_instruction=closing_transition_instruction,
+            custom_instructions_block=custom_block
         )
 
         logger.info(f"Calling Gemini API for narration (slide {slide_number}/{total_slides})...")
@@ -359,4 +367,58 @@ class LLMClient:
             logger.error(f"Failed to rewrite narration: {str(e)}")
             # Return original on error
             return current_narration
+
+    def perform_global_rewrite(self, slide_data: List[Dict[str, Any]], user_request: str, tone: str) -> List[Dict[str, Any]]:
+        """
+        Rewrite all narrations based on a global user request.
+        """
+        try:
+            from app.core.prompts import GLOBAL_REWRITE_PROMPT
+            
+            logger.info(f"Performing global rewrite with request: '{user_request[:50]}...'")
+            
+            # Prepare the input for the LLM
+            slides_input = []
+            for item in slide_data:
+                slides_input.append({
+                    "slide_number": item["slide_number"],
+                    "current_narration": item.get("narration_paragraph", "")
+                })
+            
+            prompt = GLOBAL_REWRITE_PROMPT.format(
+                tone=tone,
+                user_request=user_request,
+                slides_input_json=json.dumps(slides_input, indent=2)
+            )
+
+            response = self.model.generate_content(prompt)
+            response_text = self._extract_response_text(response)
+            
+            rewritten_data = safe_json_loads(response_text)
+            
+            rewritten_map = {}
+            if isinstance(rewritten_data, list):
+                for item in rewritten_data:
+                    if isinstance(item, dict) and "slide_number" in item and "rewritten_narration" in item:
+                        rewritten_map[item["slide_number"]] = item["rewritten_narration"]
+            
+            # Form final results
+            final_slides = []
+            for item in slide_data:
+                s_num = item["slide_number"]
+                new_narration = rewritten_map.get(s_num, item.get("narration_paragraph", ""))
+                
+                # Handle escape sequences
+                new_narration = new_narration.replace("\\\\n\\\\n", "\\n\\n").replace("\\\\n", "\\n").replace("\\\\t", "\\t")
+                
+                final_slides.append({
+                    **item,
+                    "narration_paragraph": new_narration
+                })
+            
+            return final_slides
+
+        except Exception as e:
+            logger.error(f"Failed to perform global rewrite: {str(e)}")
+            return slide_data
 

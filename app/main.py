@@ -93,6 +93,44 @@ async def rewrite_narration(
         raise HTTPException(status_code=500, detail=f"Failed to rewrite narration: {str(e)}")
 
 
+@app.post("/api/global-rewrite")
+async def global_rewrite(
+    user_request: str = Form(...),
+    slides_json: str = Form(...),
+    tone: str = Form("Professional")
+):
+    """
+    Rewrite all narrations based on a global user request.
+    """
+    try:
+        import json
+        slides = json.loads(slides_json)
+        
+        logger.info(f"=== GLOBAL REWRITE REQUEST ===")
+        logger.info(f"User request: {user_request}")
+        
+        if not user_request.strip():
+            raise HTTPException(status_code=400, detail="User request cannot be empty")
+            
+        from app.services.llm_client import LLMClient
+        llm_client = LLMClient(GEMINI_API_KEY, GEMINI_MODEL)
+        
+        updated_slides = llm_client.perform_global_rewrite(
+            slide_data=slides,
+            user_request=user_request,
+            tone=tone
+        )
+        
+        return JSONResponse({
+            "success": True,
+            "slides": updated_slides
+        })
+        
+    except Exception as e:
+        logger.error(f"Global rewrite failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/process", response_model=ProcessResponse)
 async def process_presentation(
     background_tasks: BackgroundTasks,
@@ -104,7 +142,8 @@ async def process_presentation(
     include_speaker_notes: bool = Form(True),
     enable_polishing: bool = Form(True),
     min_words: int = Form(100),
-    max_words_fixed: int = Form(150)
+    max_words_fixed: int = Form(150),
+    custom_instructions: Optional[str] = Form(None)
 ):
     """
     Process a PowerPoint file and return rewritten content, speaker notes, and narration.
@@ -113,6 +152,7 @@ async def process_presentation(
     logger.info("NEW REQUEST RECEIVED")
     logger.info(f"File: {file.filename}")
     logger.info(f"Tone: {tone}, Audience: {audience_level}")
+    logger.info(f"Custom Instructions: {custom_instructions}")
     logger.info("=" * 80)
     
     # Run cleanup of old files in background
@@ -155,7 +195,8 @@ async def process_presentation(
             include_speaker_notes=include_speaker_notes,
             enable_polishing=enable_polishing,
             min_words=min_words if not dynamic_length else None,
-            max_words_fixed=max_words_fixed if not dynamic_length else None
+            max_words_fixed=max_words_fixed if not dynamic_length else None,
+            custom_instructions=custom_instructions
         )
         
         if result["success"]:

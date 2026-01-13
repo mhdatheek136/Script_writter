@@ -35,6 +35,7 @@ class ProcessRequest(BaseModel):
     enable_polishing: bool = True
     min_words: Optional[int] = Field(default=100, ge=50, le=300)
     max_words_fixed: Optional[int] = Field(default=150, ge=100, le=400)
+    custom_instructions: Optional[str] = None
 
 
 class SlideOutput(BaseModel):

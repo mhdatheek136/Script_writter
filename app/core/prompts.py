@@ -126,6 +126,7 @@ Structure requirements for THIS slide:
 - Explain the slide content meaningfully (do not read or restate bullets verbatim).
 - Incorporate relevant speaker notes naturally, only when they add value and context.
 - {closing_transition_instruction}
+{custom_instructions_block}
 
 Return your response as a JSON object with exactly this key:
 {{
@@ -206,4 +207,33 @@ CRITICAL:
 - NO markdown formatting (no **, *, _, #, [], (), etc.)
 - Use \\n\\n for paragraph breaks inside the JSON string
 - Do NOT include literal newlines in the JSON
+"""
+
+
+GLOBAL_REWRITE_PROMPT = """
+You are an expert presentation script writer. 
+I have a list of narrations for a presentation, one for each slide. 
+The user wants to completely REWRITE all these narrations based on a new instruction.
+
+CRITICAL RULES:
+1. Follow the USER REQUEST strictly for the rewrite.
+2. Maintain the same slide order.
+3. Maintain the TONE: {tone} unless the user explicitly asks to change it.
+4. Keep the rewritten narration focused on the same core points as the current one, but change the delivery/style according to the user request.
+5. RETURN DATA MUST BE A JSON ARRAY of objects.
+
+USER NEW REQUEST:
+{user_request}
+
+Input Data:
+{slides_input_json}
+
+Output Format (JSON ONLY):
+[
+    {{
+        "slide_number": 1,
+        "rewritten_narration": "..."
+    }},
+    ...
+]
 """

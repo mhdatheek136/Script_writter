@@ -14,7 +14,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const menuToggle = document.getElementById('menu-toggle');
     const sidebar = document.querySelector('.sidebar');
     const sidebarOverlay = document.getElementById('sidebar-overlay');
+    const globalRewriteSection = document.getElementById('global-rewrite-container');
+    const globalRewriteBtn = document.getElementById('globalRewriteBtn');
+    const globalRewriteRequest = document.getElementById('global_rewrite_request');
+    const newPresentationBtn = document.getElementById('newPresentationBtn');
 
+    // Modal elements
+    const customModal = document.getElementById('custom-modal');
+    const modalConfirmBtn = document.getElementById('modal-confirm');
+    const modalCancelBtn = document.getElementById('modal-cancel');
+
+    const STORAGE_KEY = 'slide_narration_results';
     let currentResults = null;
 
     // Mobile Sidebar Toggle
@@ -44,16 +54,69 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadOptions.classList.toggle('show');
         });
 
-        // Close dropdown when clicking outside
         document.addEventListener('click', () => {
             downloadOptions.classList.remove('show');
         });
     }
 
+    // New Presentation handler
+    if (newPresentationBtn) {
+        newPresentationBtn.addEventListener('click', () => {
+            if (currentResults) {
+                showModal();
+            } else {
+                clearSession();
+            }
+        });
+    }
+
+    function showModal() {
+        if (customModal) {
+            customModal.classList.remove('hidden');
+        }
+    }
+
+    function hideModal() {
+        if (customModal) {
+            customModal.classList.add('hidden');
+        }
+    }
+
+    if (modalConfirmBtn) {
+        modalConfirmBtn.addEventListener('click', () => {
+            hideModal();
+            clearSession();
+        });
+    }
+
+    if (modalCancelBtn) {
+        modalCancelBtn.addEventListener('click', hideModal);
+    }
+
+    // Close modal when clicking overlay
+    if (customModal) {
+        customModal.addEventListener('click', (e) => {
+            if (e.target === customModal) {
+                hideModal();
+            }
+        });
+    }
+
+    function clearSession() {
+        localStorage.removeItem(STORAGE_KEY);
+        currentResults = null;
+        form.reset();
+        results.classList.add('hidden');
+        resultsContent.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        appContainer.classList.remove('results-active');
+        const fileLabel = document.querySelector('.file-custom-label span');
+        if (fileLabel) fileLabel.textContent = 'Upload .pptx';
+        window.location.reload();
+    }
+
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-
-        // Reset UI
         errorDiv.classList.add('hidden');
         results.classList.add('hidden');
         emptyState.classList.add('hidden');
@@ -64,10 +127,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const formData = new FormData(form);
         const tone = formData.get('tone');
-
-        // Handle checkbox for dynamic_length
         const dynamicLengthCheckbox = document.getElementById('dynamic_length');
         formData.set('dynamic_length', dynamicLengthCheckbox.checked ? 'true' : 'false');
+
+        const customInstructions = document.getElementById('custom_instructions').value;
+        formData.set('custom_instructions', customInstructions);
 
         try {
             const response = await fetch('/api/process', {
@@ -76,7 +140,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const data = await response.json();
-
             progress.classList.add('hidden');
             processBtn.disabled = false;
 
@@ -87,25 +150,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             currentResults = data;
-            currentResults.tone = tone; // Store tone for rewrites
+            currentResults.tone = tone;
             displayResults(data);
-
-            // Populate download options
-            downloadOptions.innerHTML = '';
-            const formats = [
-                { id: 'json', label: 'JSON Data (.json)' },
-                { id: 'txt', label: 'Plain Text (.txt)' },
-                { id: 'docx', label: 'Word Document (.docx)' },
-                { id: 'pptx', label: 'PowerPoint (.pptx)' }
-            ];
-
-            formats.forEach(format => {
-                const item = document.createElement('div');
-                item.textContent = format.label;
-                item.className = 'download-item';
-                item.onclick = () => downloadFile(format.id);
-                downloadOptions.appendChild(item);
-            });
+            populateDownloadOptions();
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(currentResults));
 
         } catch (error) {
             progress.classList.add('hidden');
@@ -114,6 +162,24 @@ document.addEventListener('DOMContentLoaded', () => {
             showError('Network error: ' + error.message);
         }
     });
+
+    function populateDownloadOptions() {
+        downloadOptions.innerHTML = '';
+        const formats = [
+            { id: 'json', label: 'JSON Data (.json)' },
+            { id: 'txt', label: 'Plain Text (.txt)' },
+            { id: 'docx', label: 'Word Document (.docx)' },
+            { id: 'pptx', label: 'PowerPoint (.pptx)' }
+        ];
+
+        formats.forEach(format => {
+            const item = document.createElement('div');
+            item.textContent = format.label;
+            item.className = 'download-item';
+            item.onclick = () => downloadFile(format.id);
+            downloadOptions.appendChild(item);
+        });
+    }
 
     function showError(message) {
         errorDiv.textContent = message;
@@ -136,22 +202,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="slide-avatar">${slide.slide_number}</div>
                         <div class="block-title">Slide ${slide.slide_number}</div>
                     </div>
-
                     <div class="content-section">
                         <div class="content-label">Transcribed Content</div>
                         <div class="notes-box">${escapeHtml(slide.rewritten_content)}</div>
                     </div>
-
                     <div class="content-section">
                         <div class="content-label">Original Speaker Notes</div>
                         <div class="notes-box">${slide.speaker_notes ? escapeHtml(slide.speaker_notes) : '<em>No notes available</em>'}</div>
                     </div>
-
                     <div class="content-section">
                         <div class="content-label">Generated Narration</div>
                         <div class="narration-box" id="narration-${index}">${formatNarration(slide.narration_paragraph)}</div>
-                        
-                        <!-- AI Rewrite & Copy Section -->
                         <div class="block-actions">
                             <button class="icon-btn" onclick="copyNarration(${index})" title="Copy Narration">
                                 <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path></svg>
@@ -161,13 +222,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 Rewrite
                             </button>
                         </div>
-                        
                         <div class="rewrite-form hidden" id="rewrite-form-${index}">
-                            <textarea 
-                                id="rewrite-request-${index}" 
-                                placeholder="How should I change this? (e.g., 'More professional', 'Add a hook')"
-                                rows="3"
-                            ></textarea>
+                            <textarea id="rewrite-request-${index}" placeholder="How should I change this? (e.g., 'More professional', 'Add a hook')" rows="3"></textarea>
                             <div class="rewrite-footer">
                                 <div class="rewrite-actions">
                                     <button class="btn-mini submit" onclick="submitRewrite(${index})">Generate</button>
@@ -180,13 +236,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     </div>
                 `;
-
                 resultsContent.appendChild(slideDiv);
             });
         }
-
         results.classList.remove('hidden');
-        results.scrollIntoView({ behavior: 'smooth' });
     }
 
     window.copyNarration = function (index) {
@@ -207,10 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.submitRewrite = async function (index) {
         const requestInput = document.getElementById(`rewrite-request-${index}`);
         const userRequest = requestInput.value.trim();
-
-        if (!userRequest) return;
-
-        if (!currentResults || !currentResults.slides || !currentResults.slides[index]) return;
+        if (!userRequest || !currentResults || !currentResults.slides || !currentResults.slides[index]) return;
 
         const slide = currentResults.slides[index];
         const loading = document.getElementById(`rewrite-loading-${index}`);
@@ -235,11 +285,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const data = await response.json();
-
             if (data.success) {
                 currentResults.slides[index].narration_paragraph = data.rewritten_narration;
-                const narrationDiv = document.getElementById(`narration-${index}`);
-                narrationDiv.innerHTML = formatNarration(data.rewritten_narration);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(currentResults));
+                document.getElementById(`narration-${index}`).innerHTML = formatNarration(data.rewritten_narration);
                 requestInput.value = '';
                 toggleRewriteForm(index);
                 showSuccessMessage(`Slide ${slide.slide_number} updated`);
@@ -255,24 +304,58 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    if (globalRewriteBtn) {
+        globalRewriteBtn.addEventListener('click', async () => {
+            const userRequest = globalRewriteRequest.value.trim();
+            if (!userRequest || !currentResults || !currentResults.slides) return;
+
+            const originalText = globalRewriteBtn.innerHTML;
+            globalRewriteBtn.innerHTML = '<div class="mini-spinner"></div> Rewriting...';
+            globalRewriteBtn.disabled = true;
+
+            try {
+                const formData = new FormData();
+                formData.append('user_request', userRequest);
+                formData.append('slides_json', JSON.stringify(currentResults.slides));
+                formData.append('tone', currentResults.tone || 'Professional');
+
+                const response = await fetch('/api/global-rewrite', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    currentResults.slides = data.slides;
+                    displayResults(currentResults);
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(currentResults));
+                    globalRewriteRequest.value = '';
+                    showSuccessMessage('Global rewrite complete');
+                } else {
+                    alert(data.error || 'Failed to rewrite narrations');
+                }
+            } catch (error) {
+                console.error('Global rewrite error:', error);
+                alert('Error: ' + error.message);
+            } finally {
+                globalRewriteBtn.innerHTML = originalText;
+                globalRewriteBtn.disabled = false;
+            }
+        });
+    }
+
     copyAllBtn.addEventListener('click', () => {
         if (!currentResults || !currentResults.slides) return;
-
         let allText = `Slide Narration AI Results\n\n`;
         currentResults.slides.forEach(slide => {
-            allText += `--- Slide ${slide.slide_number} ---\n\n` +
-                `Content:\n${slide.rewritten_content}\n\n` +
-                `Narration:\n${slide.narration_paragraph}\n\n\n`;
+            allText += `--- Slide ${slide.slide_number} ---\n\nContent:\n${slide.rewritten_content}\n\nNarration:\n${slide.narration_paragraph}\n\n\n`;
         });
-
         copyToClipboard(allText);
         showSuccessMessage('Copied to clipboard');
     });
 
     function copyToClipboard(text) {
-        navigator.clipboard.writeText(text).then(() => {
-            // Success handled by caller
-        }).catch(err => {
+        navigator.clipboard.writeText(text).catch(err => {
             const textarea = document.createElement('textarea');
             textarea.value = text;
             document.body.appendChild(textarea);
@@ -291,8 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function formatNarration(narration) {
         if (!narration) return '';
-        const paragraphs = narration.split('\n\n');
-        return paragraphs.map(p => {
+        return narration.split('\n\n').map(p => {
             const escaped = escapeHtml(p.trim());
             return escaped ? `<p>${escaped}</p>` : '';
         }).filter(p => p).join('');
@@ -300,8 +382,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function downloadFile(format) {
         if (!currentResults || !currentResults.session_id) return;
-
-        const downloadBtn = document.getElementById('downloadBtn');
         const originalText = downloadBtn.innerHTML;
         downloadBtn.innerHTML = '<div class="mini-spinner"></div> Gen...';
         downloadBtn.disabled = true;
@@ -319,7 +399,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) throw new Error('Download failed');
-
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -330,7 +409,6 @@ document.addEventListener('DOMContentLoaded', () => {
             a.click();
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
-
         } catch (error) {
             alert('Error: ' + error.message);
         } finally {
@@ -345,5 +423,24 @@ document.addEventListener('DOMContentLoaded', () => {
         successDiv.textContent = message;
         document.body.appendChild(successDiv);
         setTimeout(() => successDiv.remove(), 2500);
+    }
+
+    const savedData = localStorage.getItem(STORAGE_KEY);
+    if (savedData) {
+        try {
+            currentResults = JSON.parse(savedData);
+            displayResults(currentResults);
+            populateDownloadOptions();
+        } catch (e) {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+    }
+
+    const customInstructionsTextarea = document.getElementById('custom_instructions');
+    if (customInstructionsTextarea) {
+        customInstructionsTextarea.addEventListener('input', function () {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
     }
 });
