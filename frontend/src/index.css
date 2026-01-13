@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    body {
+        @apply font-ans antialiased transition-colors duration-500 selection:bg-soft-teal/20;
+    }
+}
+
+@layer components {
+    .btn-primary {
+        @apply px-5 py-2.5 bg-soft-navy text-white rounded-xl font-bold transition-all duration-300 active:scale-95 hover:shadow-lg disabled:opacity-50;
+    }
+
+    .dark .btn-primary {
+        @apply bg-soft-teal text-black;
+    }
+
+    .input-field {
+        @apply w-full bg-slate-50 border border-soft-border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-soft-navy/5 transition-all outline-none;
+    }
+
+    .dark .input-field {
+        @apply bg-ui-surface-dark border-soft-border-dark focus:ring-soft-teal/5 text-white;
+    }
+
+    .card-soft {
+        @apply bg-slate-50/50 border border-soft-border shadow-soft rounded-2xl p-6 transition-all;
+    }
+
+    .dark .card-soft {
+        @apply bg-ui-surface-dark border-soft-border-dark shadow-soft-dark;
+    }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+}
+
+::-webkit-scrollbar-track {
+    @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    @apply bg-slate-200 rounded-full transition-colors;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+    @apply bg-slate-800;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-300;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-700;
+}
+
+/* Animations */
+.animate-soft-in {
+    animation: softIn 0.3s ease-out forwards;
+}
+
+@keyframes softIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

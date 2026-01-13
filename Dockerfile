@@ -1,8 +1,16 @@
-FROM python:3.11-slim
+# Stage 1: Build the React frontend
+FROM node:20-slim AS frontend-build
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
 
+# Stage 2: Build the FastAPI backend
+FROM python:3.11-slim
 WORKDIR /app
 
-# Install system dependencies (LibreOffice for soffice + poppler-utils for pdftoppm fallback)
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     libreoffice \
     poppler-utils \
@@ -15,7 +23,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
-COPY static/ ./static/
+
+# Copy the built frontend from Stage 1
+COPY --from=frontend-build /frontend/dist ./frontend/dist
 
 # Expose port
 EXPOSE 8000

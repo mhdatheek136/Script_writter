@@ -34,7 +34,10 @@ if not GEMINI_API_KEY:
 @app.get("/", response_class=FileResponse)
 async def root():
     """Serve the main UI."""
-    return FileResponse("static/index.html")
+    index_path = Path(__file__).parent.parent / "frontend" / "dist" / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="React build not found. Please run 'npm run build' in the frontend directory.")
 
 
 @app.get("/health")
@@ -301,10 +304,22 @@ async def download_file(filename: str):
 
 
 # Mount static files (for CSS and JS)
-static_dir = Path(__file__).parent.parent / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
-    
+frontend_dist = Path(__file__).parent.parent / "frontend" / "dist" / "assets"
+if frontend_dist.exists():
+    app.mount("/assets", StaticFiles(directory=frontend_dist), name="assets")
+
+@app.get("/{rest_of_path:path}")
+async def serve_frontend(rest_of_path: str):
+    dist_dir = Path(__file__).parent.parent / "frontend" / "dist"
+    file_path = dist_dir / rest_of_path
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(file_path)
+    # Default to index.html for React routing
+    index_path = dist_dir / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="Not Found")
+
 # Create directories
 temp_output_dir = Path("temp_outputs")
 temp_output_dir.mkdir(exist_ok=True)
