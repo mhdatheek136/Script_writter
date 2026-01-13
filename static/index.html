@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slide Narration AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <button class="new-btn" onclick="window.location.reload()">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    New Presentation
+                </button>
+            </div>
+
+            <div class="sidebar-content">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="sidebar-section">
+                        <label class="section-label">Presentation</label>
+                        <div class="file-upload-wrapper">
+                            <input type="file" id="file" name="file" accept=".pptx" required>
+                            <label for="file" class="file-custom-label">
+                                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2"
+                                    fill="none">
+                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                                </svg>
+                                <span>Upload .pptx</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <label class="section-label">Configuration</label>
+
+                        <div class="setting-group">
+                            <label for="tone">Tone</label>
+                            <select id="tone" name="tone">
+                                <option value="Professional">Professional</option>
+                                <option value="Friendly">Friendly</option>
+                                <option value="Sales">Sales</option>
+                                <option value="Technical">Technical</option>
+                            </select>
+                        </div>
+
+                        <div class="setting-group">
+                            <label for="audience_level">Audience</label>
+                            <select id="audience_level" name="audience_level">
+                                <option value="General">General</option>
+                                <option value="Executive">Executive</option>
+                                <option value="Technical">Technical</option>
+                            </select>
+                        </div>
+
+                        <div class="setting-group">
+                            <label for="narration_style">Style</label>
+                            <select id="narration_style" name="narration_style">
+                                <option value="Human-like" selected>Human-like</option>
+                                <option value="Formal">Formal</option>
+                                <option value="Concise">Concise</option>
+                                <option value="Storytelling">Storytelling</option>
+                                <option value="Conversational">Conversational</option>
+                                <option value="Professional">Professional</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <label class="section-label">Refinement</label>
+                        <div class="checkbox-item tooltip-container">
+                            <input type="checkbox" id="include_speaker_notes" name="include_speaker_notes" checked>
+                            <label for="include_speaker_notes">Use speaker notes</label>
+                            <span class="tooltip-icon">?</span>
+                            <div class="tooltip-text">Incorporate your existing slide notes into the AI narration
+                                generation.</div>
+                        </div>
+                        <div class="checkbox-item tooltip-container">
+                            <input type="checkbox" id="dynamic_length" name="dynamic_length" checked>
+                            <label for="dynamic_length">Dynamic length</label>
+                            <span class="tooltip-icon">?</span>
+                            <div class="tooltip-text">Adapts the speaking pace and length based on the complexity of
+                                each slide.</div>
+                        </div>
+                        <div class="checkbox-item tooltip-container">
+                            <input type="checkbox" id="enable_polishing" name="enable_polishing" checked>
+                            <label for="enable_polishing">AI Polishing</label>
+                            <span class="tooltip-icon">?</span>
+                            <div class="tooltip-text">Professional refinement to remove awkward phrasing and improve
+                                natural flow.</div>
+                        </div>
+                    </div>
+
+                    <div id="fixed_length_container" style="display: none;" class="sidebar-section">
+                        <div class="setting-group">
+                            <label for="min_words">Min Words</label>
+                            <input type="number" id="min_words" name="min_words" value="100" min="50" max="300">
+                        </div>
+                        <div class="setting-group">
+                            <label for="max_words_fixed">Max Words</label>
+                            <input type="number" id="max_words_fixed" name="max_words_fixed" value="150" min="100"
+                                max="400">
+                        </div>
+                    </div>
+
+                    <div class="sidebar-footer">
+                        <button type="submit" id="processBtn" class="process-btn">
+                            Generate Narration
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="content-wrapper">
+                <header class="main-header">
+                    <button id="menu-toggle" class="menu-toggle-btn" aria-label="Toggle configuration">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2"
+                            fill="none">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
+                    <h1>Slide Narration AI</h1>
+                </header>
+
+                <!-- Empty State -->
+                <div id="empty-state" class="empty-state">
+                    <div class="empty-icon">✨</div>
+                    <h2>How can I help with your presentation today?</h2>
+                    <p>Upload a PowerPoint file and select your preferences in the sidebar to generate a professional
+                        narration script.</p>
+                </div>
+
+                <!-- Progress -->
+                <div id="progress" class="hidden">
+                    <div class="progress-card">
+                        <div class="spinner"></div>
+                        <p id="progressText">Analyzing your slides...</p>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Results -->
+                <div id="results" class="hidden">
+                    <div class="results-toolbar">
+                        <div class="toolbar-left">
+                            <h2>Transcribed Script</h2>
+                        </div>
+                        <div class="toolbar-right">
+                            <button id="copyAllBtn" class="action-btn">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
+                                    fill="none">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+                                </svg>
+                                Copy All
+                            </button>
+                            <div class="dropdown">
+                                <button id="downloadBtn" class="action-btn primary">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor"
+                                        stroke-width="2" fill="none">
+                                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                                    </svg>
+                                    Download
+                                </button>
+                                <div class="dropdown-content" id="downloadOptions"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="resultsContent" class="chat-flow"></div>
+                </div>
+
+                <div id="error" class="error-box hidden"></div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/script.js"></script>
+    <script>
+        document.getElementById('dynamic_length').addEventListener('change', function (e) {
+            const container = document.getElementById('fixed_length_container');
+            container.style.display = e.target.checked ? 'none' : 'block';
+        });
+
+        // File name display
+        document.getElementById('file').addEventListener('change', function (e) {
+            const label = document.querySelector('.file-custom-label span');
+            if (this.files && this.files.length > 0) {
+                label.textContent = this.files[0].name;
+            } else {
+                label.textContent = 'Upload .pptx';
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,204 @@
+import os
+import shutil
+import subprocess
+import re
+import logging
+from pathlib import Path
+from typing import List, Tuple, Optional
+from pptx import Presentation
+from PIL import Image, ImageDraw, ImageFont
+
+logger = logging.getLogger(__name__)
+
+class PPTXExtractor:
+    def __init__(self, temp_dir: Path):
+        self.temp_dir = temp_dir
+        self.temp_files = []
+
+    def _resolve_soffice_cmd(self) -> str:
+        """Resolve LibreOffice executable robustly (soffice may not be on PATH)."""
+        soffice_cmd = (
+            shutil.which("soffice")
+            or shutil.which("libreoffice")
+            or shutil.which("soffice.bin")
+        )
+
+        if not soffice_cmd:
+            candidates = [
+                "/usr/bin/soffice",
+                "/usr/local/bin/soffice",
+                "/usr/lib/libreoffice/program/soffice",
+                "/usr/lib64/libreoffice/program/soffice",
+                "/opt/libreoffice/program/soffice",
+                "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+            ]
+            for c in candidates:
+                if os.path.exists(c) and os.access(c, os.X_OK):
+                    soffice_cmd = c
+                    break
+
+        if not soffice_cmd:
+            raise FileNotFoundError(
+                "LibreOffice executable not found. "
+                "Install LibreOffice in the runtime image or ensure 'soffice'/'libreoffice' is on PATH."
+            )
+
+        return soffice_cmd
+
+    def _extract_slide_text(self, slide) -> str:
+        """Extract text content from a slide."""
+        text_parts = []
+        for shape in slide.shapes:
+            if hasattr(shape, "text"):
+                text = shape.text.strip()
+                if text:
+                    text_parts.append(text)
+        return "\n".join(text_parts)
+
+    def _extract_speaker_notes(self, slide) -> str:
+        """Extract speaker notes from a slide."""
+        try:
+            if slide.has_notes_slide:
+                notes_slide = slide.notes_slide
+                if notes_slide.notes_text_frame:
+                    notes_text = notes_slide.notes_text_frame.text.strip()
+                    return notes_text if notes_text else ""
+            return ""
+        except Exception:
+            # If notes slide doesn't exist or can't be accessed, return empty string
+            return ""
+
+    def pptx_to_images(self, pptx_path: Path) -> Tuple[List[Path], List[str], List[str]]:
+        """
+        Convert PPTX slides to images and extract speaker notes and original text.
+        Returns tuple of (image_paths, speaker_notes_list, original_text_list).
+        """
+        try:
+            logger.info(f"Loading PowerPoint file: {pptx_path}")
+            prs = Presentation(pptx_path)
+            total_slides = len(prs.slides)
+            logger.info(f"Found {total_slides} slides in presentation")
+
+            image_paths = []
+            speaker_notes_list = []
+            original_text_list = []
+
+            # Extract notes and text first
+            for slide in prs.slides:
+                speaker_notes_list.append(self._extract_speaker_notes(slide))
+                original_text_list.append(self._extract_slide_text(slide))
+
+            logger.info("Rendering PPTX to PNG using LibreOffice (soffice) ...")
+            out_dir = self.temp_dir / "rendered_png"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            self.temp_files.append(out_dir)
+
+            soffice_cmd = self._resolve_soffice_cmd()
+
+            # Try direct PPTX -> PNG export first
+            subprocess.run(
+                [
+                    soffice_cmd,
+                    "--headless",
+                    "--nologo",
+                    "--nolockcheck",
+                    "--nodefault",
+                    "--norestore",
+                    "--convert-to",
+                    "png:impress_png_Export",
+                    "--outdir",
+                    str(out_dir),
+                    str(pptx_path),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+
+            png_files = list(out_dir.glob("*.png"))
+
+            def _slide_sort_key(p: Path):
+                m = re.search(r"(\d+)(?=\D*$)", p.stem)
+                return int(m.group(1)) if m else 10**9
+
+            png_files = sorted(png_files, key=_slide_sort_key)
+
+            # If LibreOffice produced only 1 image (or fewer than slides), fallback to PDF -> PNG per page
+            if len(png_files) < total_slides:
+                logger.warning(
+                    f"Direct PNG export produced {len(png_files)} image(s) for {total_slides} slides. "
+                    "Falling back to PPTX -> PDF -> PNG per page."
+                )
+
+                pdftoppm_cmd = shutil.which("pdftoppm")
+                if not pdftoppm_cmd:
+                    raise FileNotFoundError(
+                        "pdftoppm not found. Install 'poppler-utils' in the runtime image to enable PDF-to-PNG conversion."
+                    )
+                
+                pdf_dir = self.temp_dir / "rendered_pdf"
+                pdf_dir.mkdir(parents=True, exist_ok=True)
+                self.temp_files.append(pdf_dir)
+
+                pdf_out = pdf_dir / f"{pptx_path.stem}.pdf"
+                self.temp_files.append(pdf_out)
+
+                # PPTX -> PDF
+                subprocess.run(
+                    [
+                        soffice_cmd,
+                        "--headless",
+                        "--nologo",
+                        "--nolockcheck",
+                        "--nodefault",
+                        "--norestore",
+                        "--convert-to",
+                        "pdf:impress_pdf_Export",
+                        "--outdir",
+                        str(pdf_dir),
+                        str(pptx_path),
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                )
+
+                if not pdf_out.exists():
+                    pdf_candidates = list(pdf_dir.glob("*.pdf"))
+                    if not pdf_candidates:
+                        raise Exception("LibreOffice did not produce a PDF file for fallback rendering")
+                    pdf_out = pdf_candidates[0]
+                    self.temp_files.append(pdf_out)
+
+                # PDF -> PNG per page
+                out_prefix = str(out_dir / "slide")
+                subprocess.run(
+                    [
+                        pdftoppm_cmd,
+                        "-png",
+                        "-r",
+                        "200",
+                        str(pdf_out),
+                        out_prefix,
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                )
+
+                png_files = sorted(list(out_dir.glob("*.png")), key=_slide_sort_key)
+
+            # Ensure we have the correct number of images
+            if len(png_files) > total_slides:
+                png_files = png_files[:total_slides]
+            
+            image_paths = [p for p in png_files]
+            for p in image_paths:
+                self.temp_files.append(p)
+
+            logger.info(f"Successfully converted {len(image_paths)} slides to images")
+            return image_paths, speaker_notes_list, original_text_list
+
+        except Exception as e:
+            logger.error(f"Failed to convert PPTX to images: {e}")
+            raise Exception(f"Failed to convert PPTX to images: {str(e)}")

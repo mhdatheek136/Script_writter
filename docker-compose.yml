@@ -4,7 +4,7 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
@@ -13,5 +13,5 @@ services:
     volumes:
       - ./app:/app/app
       - ./static:/app/static
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
-

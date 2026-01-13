@@ -1,12 +1,16 @@
 import os
+import uuid
+import shutil
 import logging
-from pathlib import Path
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 import tempfile
-from app.models import ProcessRequest, ProcessResponse, Tone, AudienceLevel, NotesLength
-from app.processors import SlideProcessor
+from pathlib import Path
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from typing import Optional, List, Dict, Any
+from app.models import ProcessResponse
+from app.core.slide_processor import SlideProcessor
+from app.output_generator import OutputGenerator
 
 # Configure logging
 logging.basicConfig(
@@ -20,123 +24,17 @@ app = FastAPI(title="Slide-to-Narration Rewriter")
 # Get configuration from environment
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE_MB", "50")) * 1024 * 1024  # Convert MB to bytes
+MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE_MB", "50")) * 1024 * 1024
 MAX_SLIDES = int(os.getenv("MAX_SLIDES", "30"))
 
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY environment variable is required")
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=FileResponse)
 async def root():
     """Serve the main UI."""
-    html_content = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slide-to-Narration Rewriter</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Slide-to-Narration Rewriter</h1>
-            <p>Upload a PowerPoint file to rewrite slides and generate narration</p>
-        </header>
-        
-        <main>
-            <form id="uploadForm" enctype="multipart/form-data">
-                <div class="form-group">
-                    <label for="file">PowerPoint File (.pptx)</label>
-                    <input type="file" id="file" name="file" accept=".pptx" required>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="tone">Target Tone</label>
-                        <select id="tone" name="tone">
-                            <option value="Professional">Professional</option>
-                            <option value="Friendly">Friendly</option>
-                            <option value="Sales">Sales</option>
-                            <option value="Technical">Technical</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="audience_level">Audience Level</label>
-                        <select id="audience_level" name="audience_level">
-                            <option value="General">General</option>
-                            <option value="Executive">Executive</option>
-                            <option value="Technical">Technical</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="max_words">Max Words per Slide</label>
-                        <input type="number" id="max_words" name="max_words" value="60" min="20" max="200">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="notes_length">Notes Length</label>
-                        <select id="notes_length" name="notes_length">
-                            <option value="Short">Short</option>
-                            <option value="Medium" selected>Medium</option>
-                            <option value="Detailed">Detailed</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="narration_style">Narration Style</label>
-                        <select id="narration_style" name="narration_style">
-                            <option value="Human-like" selected>Human-like</option>
-                            <option value="Formal">Formal</option>
-                            <option value="Concise">Concise</option>
-                            <option value="Storytelling">Storytelling</option>
-                            <option value="Conversational">Conversational</option>
-                            <option value="Professional">Professional</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="dynamic_length">Narration Length</label>
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="dynamic_length" name="dynamic_length" checked>
-                            <label for="dynamic_length" class="checkbox-label">Dynamic (adapts to content)</label>
-                        </div>
-                        <small class="form-hint">Uncheck for fixed length (100-150 words per slide)</small>
-                    </div>
-                </div>
-                
-                <button type="submit" id="processBtn">Process Presentation</button>
-            </form>
-            
-            <div id="progress" class="hidden">
-                <div class="spinner"></div>
-                <p id="progressText">Processing...</p>
-            </div>
-            
-            <div id="results" class="hidden">
-                <h2>Results</h2>
-                <div id="resultsContent"></div>
-                <button id="copyAllBtn" class="copy-btn">Copy All Results</button>
-                <button id="downloadJsonBtn" class="copy-btn">Download JSON</button>
-            </div>
-            
-            <div id="error" class="error hidden"></div>
-        </main>
-    </div>
-    
-    <script src="/static/script.js"></script>
-</body>
-</html>
-    """
-    return HTMLResponse(content=html_content)
+    return FileResponse("static/index.html")
 
 
 @app.get("/health")
@@ -145,15 +43,68 @@ async def health():
     return {"status": "healthy", "model": GEMINI_MODEL}
 
 
+@app.post("/api/rewrite-narration")
+async def rewrite_narration(
+    slide_number: int = Form(...),
+    current_narration: str = Form(...),
+    rewritten_content: str = Form(...),
+    speaker_notes: str = Form(""),
+    user_request: str = Form(...),
+    tone: str = Form("Professional")
+):
+    """
+    Rewrite a single narration based on user request.
+    """
+    try:
+        logger.info(f"=== NARRATION REWRITE REQUEST ===")
+        logger.info(f"Slide: {slide_number}")
+        logger.info(f"User request: {user_request}")
+        logger.info(f"Tone: {tone}")
+        
+        # Validate request
+        if not user_request.strip():
+            raise HTTPException(status_code=400, detail="User request cannot be empty")
+        
+        # Create LLM client
+        from app.services.llm_client import LLMClient
+        llm_client = LLMClient(GEMINI_API_KEY, GEMINI_MODEL)
+        
+        # Call rewrite method
+        new_narration = llm_client.rewrite_narration(
+            current_narration=current_narration,
+            rewritten_content=rewritten_content,
+            speaker_notes=speaker_notes,
+            user_request=user_request,
+            tone=tone
+        )
+        
+        logger.info(f"Rewrite successful for slide {slide_number}")
+        
+        return JSONResponse({
+            "success": True,
+            "slide_number": slide_number,
+            "rewritten_narration": new_narration
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Rewrite failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to rewrite narration: {str(e)}")
+
+
 @app.post("/api/process", response_model=ProcessResponse)
 async def process_presentation(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     tone: str = Form("Professional"),
     audience_level: str = Form("General"),
-    max_words_per_slide: int = Form(60),
-    notes_length: str = Form("Medium"),
     narration_style: str = Form("Human-like"),
-    dynamic_length: bool = Form(True)
+    dynamic_length: bool = Form(True),
+    include_speaker_notes: bool = Form(True),
+    enable_polishing: bool = Form(True),
+    min_words: int = Form(100),
+    max_words_fixed: int = Form(150)
 ):
     """
     Process a PowerPoint file and return rewritten content, speaker notes, and narration.
@@ -161,93 +112,182 @@ async def process_presentation(
     logger.info("=" * 80)
     logger.info("NEW REQUEST RECEIVED")
     logger.info(f"File: {file.filename}")
-    logger.info(f"Tone: {tone}, Audience: {audience_level}, Max words: {max_words_per_slide}")
-    logger.info(f"Narration style: {narration_style}, Dynamic length: {dynamic_length}")
+    logger.info(f"Tone: {tone}, Audience: {audience_level}")
     logger.info("=" * 80)
+    
+    # Run cleanup of old files in background
+    background_tasks.add_task(cleanup_old_files)
     
     # Validate file
     if not file.filename.endswith('.pptx'):
         logger.error(f"Invalid file type: {file.filename}")
         raise HTTPException(status_code=400, detail="Only .pptx files are supported")
     
+    # Generate session ID and temp paths
+    session_id = str(uuid.uuid4())
+    base_name = Path(file.filename).stem
+    
+    # Save uploaded file to persistent temp storage for this session
+    session_upload_path = temp_upload_dir / f"{session_id}.pptx"
+    
     # Validate file size
     file_content = await file.read()
-    file_size_mb = len(file_content) / (1024 * 1024)
-    logger.info(f"File size: {file_size_mb:.2f} MB")
-    
     if len(file_content) > MAX_FILE_SIZE:
-        logger.error(f"File size {file_size_mb:.2f} MB exceeds maximum {MAX_FILE_SIZE / (1024*1024):.0f} MB")
-        raise HTTPException(
-            status_code=400,
-            detail=f"File size exceeds maximum of {MAX_FILE_SIZE / (1024*1024):.0f}MB"
-        )
+        logger.error(f"File size exceeds maximum")
+        raise HTTPException(status_code=400, detail="File too large")
+        
+    with open(session_upload_path, "wb") as f:
+        f.write(file_content)
     
-    # Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as tmp_file:
-        tmp_file.write(file_content)
-        tmp_path = Path(tmp_file.name)
-    
-    logger.info(f"Saved uploaded file to: {tmp_path}")
+    logger.info(f"Saved session file to: {session_upload_path}")
     
     try:
         # Initialize processor
-        logger.info("Initializing SlideProcessor...")
         processor = SlideProcessor(GEMINI_API_KEY, GEMINI_MODEL)
         
         # Process the presentation
-        logger.info("Starting presentation processing...")
-        logger.info(f"Narration style: {narration_style}, Dynamic length: {dynamic_length}")
         result = processor.process_pptx(
-            tmp_path,
+            session_upload_path,
             tone=tone,
             audience_level=audience_level,
-            max_words=max_words_per_slide,
-            notes_length=notes_length,
             narration_style=narration_style,
-            dynamic_length=dynamic_length
+            dynamic_length=dynamic_length,
+            include_speaker_notes=include_speaker_notes,
+            enable_polishing=enable_polishing,
+            min_words=min_words if not dynamic_length else None,
+            max_words_fixed=max_words_fixed if not dynamic_length else None
         )
         
-        logger.info(f"Processing complete. Success: {result.get('success', False)}")
-        if result.get("success"):
-            logger.info(f"Total slides: {result.get('total_slides', 0)}")
+        if result["success"]:
+            # Validate slide count
+            if result["total_slides"] > MAX_SLIDES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Presentation has {result['total_slides']} slides, maximum is {MAX_SLIDES}"
+                )
+            
+            # Return session info and slide data
+            # No files generated yet!
+            result["session_id"] = session_id
+            result["base_name"] = base_name
+            
+            logger.info("Returning results with session ID")
+            return ProcessResponse(**result)
         else:
-            logger.error(f"Processing failed: {result.get('error', 'Unknown error')}")
-        
-        # Validate slide count
-        if result["success"] and result["total_slides"] > MAX_SLIDES:
-            logger.error(f"Slide count {result['total_slides']} exceeds maximum {MAX_SLIDES}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Presentation has {result['total_slides']} slides, maximum is {MAX_SLIDES}"
+            return ProcessResponse(
+                success=False,
+                total_slides=0,
+                slides=[],
+                error=result.get("error", "Processing failed")
             )
-        
-        logger.info("Returning results to client...")
-        return ProcessResponse(**result)
-    
+            
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
         return ProcessResponse(
             success=False,
             total_slides=0,
             slides=[],
             error=str(e)
         )
-    finally:
-        # Cleanup uploaded file
-        try:
-            if tmp_path.exists():
-                tmp_path.unlink()
-                logger.info(f"Cleaned up uploaded file: {tmp_path}")
-        except Exception as e:
-            logger.warning(f"Failed to cleanup uploaded file: {e}")
+
+
+@app.post("/api/generate-output")
+async def generate_output(
+    session_id: str = Form(...),
+    base_name: str = Form(...),
+    format_type: str = Form(...),
+    slides_json: str = Form(...)
+):
+    """
+    Generate a specific output format on-demand using current slide data.
+    """
+    try:
+        import json
+        slides = json.loads(slides_json)
+        
+        result = {
+            "slides": slides,
+            "success": True
+        }
+        
+        output_generator = OutputGenerator()
+        generated_filename = None
+        
+        if format_type == "json":
+            generated_filename = output_generator.generate_json(result, base_name)
+        elif format_type == "txt":
+            generated_filename = output_generator.generate_text(result, base_name)
+        elif format_type == "docx":
+            generated_filename = output_generator.generate_word(result, base_name)
+        elif format_type == "pptx":
+            session_upload_path = temp_upload_dir / f"{session_id}.pptx"
+            if not session_upload_path.exists():
+                raise HTTPException(status_code=404, detail="Original presentation not found. Please re-process.")
+            generated_filename = output_generator.generate_pptx_with_notes(
+                session_upload_path, result, base_name
+            )
+        
+        if not generated_filename:
+            raise HTTPException(status_code=400, detail="Invalid format or generation failed")
+            
+        file_path = Path("temp_outputs") / generated_filename
+        
+        return FileResponse(
+            path=file_path,
+            filename=generated_filename,
+            media_type="application/octet-stream"
+        )
+        
+    except Exception as e:
+        logger.error(f"On-demand generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/download/{filename}")
+async def download_file(filename: str):
+    """Download a generated file."""
+    file_path = Path("temp_outputs") / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream"
+    )
 
 
 # Mount static files (for CSS and JS)
 static_dir = Path(__file__).parent.parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    
+# Create directories
+temp_output_dir = Path("temp_outputs")
+temp_output_dir.mkdir(exist_ok=True)
 
+temp_upload_dir = Path("temp_uploads")
+temp_upload_dir.mkdir(exist_ok=True)
+
+
+def cleanup_old_files():
+    """Delete files older than 1 hour in temp directories."""
+    import time
+    now = time.time()
+    cutoff = now - 3600  # 1 hour ago
+    
+    for directory in [temp_output_dir, temp_upload_dir]:
+        if not directory.exists():
+            continue
+        for file_path in directory.glob("*"):
+            try:
+                if file_path.stat().st_mtime < cutoff:
+                    if file_path.is_file():
+                        file_path.unlink()
+                    elif file_path.is_dir():
+                        shutil.rmtree(file_path)
+                    logger.info(f"Cleaned up old file/dir: {file_path}")
+            except Exception as e:
+                logger.error(f"Error during cleanup of {file_path}: {e}")

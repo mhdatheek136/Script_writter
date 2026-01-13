@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from enum import Enum
 
 
@@ -16,12 +16,6 @@ class AudienceLevel(str, Enum):
     TECHNICAL = "Technical"
 
 
-class NotesLength(str, Enum):
-    SHORT = "Short"
-    MEDIUM = "Medium"
-    DETAILED = "Detailed"
-
-
 class NarrationStyle(str, Enum):
     HUMAN_LIKE = "Human-like"
     FORMAL = "Formal"
@@ -34,23 +28,36 @@ class NarrationStyle(str, Enum):
 class ProcessRequest(BaseModel):
     tone: Tone = Tone.PROFESSIONAL
     audience_level: AudienceLevel = AudienceLevel.GENERAL
-    max_words_per_slide: int = Field(default=60, ge=20, le=200)
-    notes_length: NotesLength = NotesLength.MEDIUM
+    max_words: int = Field(default=60, ge=20, le=200)
     narration_style: NarrationStyle = NarrationStyle.HUMAN_LIKE
     dynamic_length: bool = True
+    include_speaker_notes: bool = True
+    enable_polishing: bool = True
+    min_words: Optional[int] = Field(default=100, ge=50, le=300)
+    max_words_fixed: Optional[int] = Field(default=150, ge=100, le=400)
 
 
 class SlideOutput(BaseModel):
     slide_number: int
+    original_content: str
     rewritten_content: str
     speaker_notes: str
     narration_paragraph: str
+    polished_narration: Optional[str] = None
+
+
+class OutputFile(BaseModel):
+    format: str
+    filename: str
+    download_url: str
+    size_kb: float
 
 
 class ProcessResponse(BaseModel):
     success: bool
     total_slides: int
     slides: List[SlideOutput]
-    overall_summary: Optional[str] = None
+    session_id: Optional[str] = None
+    base_name: Optional[str] = None
+    processing_summary: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-
