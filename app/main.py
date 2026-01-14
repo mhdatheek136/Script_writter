@@ -36,7 +36,7 @@ async def root():
     """Serve the main UI."""
     index_path = Path(__file__).parent.parent / "frontend" / "dist" / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        return FileResponse(str(index_path))  # minimal: FileResponse is happiest with str
     raise HTTPException(status_code=404, detail="React build not found. Please run 'npm run build' in the frontend directory.")
 
 
@@ -257,30 +257,29 @@ async def generate_output(
         }
         
         output_generator = OutputGenerator()
-        generated_filename = None
+        generated_path = None  # FIX: treat this as a Path
         
         if format_type == "json":
-            generated_filename = output_generator.generate_json(result, base_name)
+            generated_path = output_generator.generate_json(result, base_name)
         elif format_type == "txt":
-            generated_filename = output_generator.generate_text(result, base_name)
+            generated_path = output_generator.generate_text(result, base_name)
         elif format_type == "docx":
-            generated_filename = output_generator.generate_word(result, base_name)
+            generated_path = output_generator.generate_word(result, base_name)
         elif format_type == "pptx":
             session_upload_path = temp_upload_dir / f"{session_id}.pptx"
             if not session_upload_path.exists():
                 raise HTTPException(status_code=404, detail="Original presentation not found. Please re-process.")
-            generated_filename = output_generator.generate_pptx_with_notes(
+            generated_path = output_generator.generate_pptx_with_notes(
                 session_upload_path, result, base_name
             )
         
-        if not generated_filename:
+        if not generated_path:
             raise HTTPException(status_code=400, detail="Invalid format or generation failed")
-            
-        file_path = temp_output_dir / generated_filename
         
+        # FIX: FileResponse expects str path + str filename (not Path)
         return FileResponse(
-            path=file_path,
-            filename=generated_filename,
+            path=str(generated_path),
+            filename=generated_path.name,
             media_type="application/octet-stream"
         )
         
@@ -296,9 +295,10 @@ async def download_file(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
+    # minimal: pass strings to FileResponse
     return FileResponse(
-        path=file_path,
-        filename=filename,
+        path=str(file_path),
+        filename=Path(filename).name,
         media_type="application/octet-stream"
     )
 
@@ -313,11 +313,11 @@ async def serve_frontend(rest_of_path: str):
     dist_dir = Path(__file__).parent.parent / "frontend" / "dist"
     file_path = dist_dir / rest_of_path
     if file_path.exists() and file_path.is_file():
-        return FileResponse(file_path)
+        return FileResponse(str(file_path))  # minimal: str
     # Default to index.html for React routing
     index_path = dist_dir / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        return FileResponse(str(index_path))  # minimal: str
     raise HTTPException(status_code=404, detail="Not Found")
 
 # Create directories
