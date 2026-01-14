@@ -13,7 +13,7 @@ const Sidebar = ({
   addToast,
 }) => {
   const [formData, setFormData] = useState({
-    tone: 'Conversational',
+    tone: 'Professional',
     audience_level: 'General',
     narration_style: 'Conversational',
     dynamic_length: true,
@@ -23,6 +23,11 @@ const Sidebar = ({
     enable_ai_polishing: true,
     custom_instructions: '',
   });
+
+  // UPDATED: options aligned with model.py enums
+  const TONE_OPTIONS = ['Professional', 'Friendly', 'Sales', 'Technical'];
+  const AUDIENCE_OPTIONS = ['General', 'Executive', 'Technical'];
+  const NARRATION_STYLE_OPTIONS = ['Human-like', 'Formal', 'Concise', 'Storytelling', 'Conversational', 'Professional'];
 
   const fileInputRef = useRef(null);
 
@@ -73,7 +78,11 @@ const Sidebar = ({
 
   const baseInput =
     `w-full px-4 py-3 rounded-xl border transition-all text-xs font-bold font-sans outline-none ` +
-    `${isDarkMode ? 'bg-ui-surface-dark border-slate-800 text-white focus:border-soft-teal' : 'bg-white border-slate-100 text-slate-700 focus:border-soft-navy shadow-sm'}`;
+    `${
+      isDarkMode
+        ? 'bg-ui-surface-dark border-slate-800 text-white focus:border-soft-teal'
+        : 'bg-white border-slate-100 text-slate-700 focus:border-soft-navy shadow-sm'
+    }`;
 
   const selectClasses =
     baseInput +
@@ -249,8 +258,10 @@ const Sidebar = ({
             <LabelWithTooltip label="Tone" tooltipKey="tone" />
             <div className="relative">
               <select name="tone" value={formData.tone} onChange={handleInputChange} className={selectClasses}>
-                {['Conversational', 'Friendly', 'Professional', 'Bold', 'Academic', 'Persuasive'].map((t) => (
-                  <option key={t}>{t}</option>
+                {TONE_OPTIONS.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
                 ))}
               </select>
               <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -266,8 +277,10 @@ const Sidebar = ({
             <LabelWithTooltip label="Style" tooltipKey="narration_style" />
             <div className="relative">
               <select name="narration_style" value={formData.narration_style} onChange={handleInputChange} className={selectClasses}>
-                {['Conversational', 'Human-like', 'Professional', 'Formal', 'Concise', 'Storytelling'].map((s) => (
-                  <option key={s}>{s}</option>
+                {NARRATION_STYLE_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
               </select>
               <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -283,8 +296,10 @@ const Sidebar = ({
             <LabelWithTooltip label="Audience" tooltipKey="audience_level" />
             <div className="relative">
               <select name="audience_level" value={formData.audience_level} onChange={handleInputChange} className={selectClasses}>
-                {['General', 'Executive', 'Technical', 'Junior', 'Expert'].map((a) => (
-                  <option key={a}>{a}</option>
+                {AUDIENCE_OPTIONS.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
                 ))}
               </select>
               <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -350,7 +365,13 @@ const Sidebar = ({
           {/* Toggles */}
           <div className="space-y-3 pt-2">
             <label className="flex items-center group cursor-pointer relative">
-              <input type="checkbox" name="use_contextual_notes" checked={formData.use_contextual_notes} onChange={handleInputChange} className="hidden" />
+              <input
+                type="checkbox"
+                name="use_contextual_notes"
+                checked={formData.use_contextual_notes}
+                onChange={handleInputChange}
+                className="hidden"
+              />
               <div className={`w-10 h-6 rounded-full relative transition-all ${formData.use_contextual_notes ? 'bg-soft-teal' : 'bg-slate-300 dark:bg-slate-800'}`}>
                 <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${formData.use_contextual_notes ? 'translate-x-4' : ''}`} />
               </div>
@@ -360,7 +381,13 @@ const Sidebar = ({
             </label>
 
             <label className="flex items-center group cursor-pointer relative">
-              <input type="checkbox" name="enable_ai_polishing" checked={formData.enable_ai_polishing} onChange={handleInputChange} className="hidden" />
+              <input
+                type="checkbox"
+                name="enable_ai_polishing"
+                checked={formData.enable_ai_polishing}
+                onChange={handleInputChange}
+                className="hidden"
+              />
               <div className={`w-10 h-6 rounded-full relative transition-all ${formData.enable_ai_polishing ? 'bg-soft-teal' : 'bg-slate-300 dark:bg-slate-800'}`}>
                 <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${formData.enable_ai_polishing ? 'translate-x-4' : ''}`} />
               </div>

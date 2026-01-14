@@ -172,8 +172,8 @@ class OutputGenerator:
         mode: str = "replace",  # "replace" or "append"
     ) -> Path:
         """
-        mode="replace": overwrite notes with narration+speaker_notes
-        mode="append": append under a marker, preserving existing notes text
+        mode="replace": overwrite notes with narration only
+        mode="append": append narration under a marker, preserving existing notes text
         """
         base = self._safe_base(base_name)
         filename = f"{base}_{self._run_suffix()}_with_narration.pptx"
@@ -182,34 +182,32 @@ class OutputGenerator:
             original_pptx = Path(original_pptx)
             slides = self._validate_slides(result)
 
-            narration_map: Dict[int, Dict[str, str]] = {}
+            narration_map: Dict[int, str] = {}
             for s in slides:
                 if s["slide_number"] is not None:
-                    narration_map[s["slide_number"]] = {
-                        "narration": s["narration_paragraph"],
-                        "speaker_notes": s["speaker_notes"],
-                    }
+                    narration_map[s["slide_number"]] = (s.get("narration_paragraph") or "").strip()
 
             prs = Presentation(str(original_pptx))
 
-            for i, slide in enumerate(prs.slides, start=1):
-                payload = narration_map.get(i)
-                if not payload:
-                    continue
+            marker = "--- Generated ---"
 
-                new_text = (
-                    f"Narration:\n{payload['narration']}\n\n"
-                    f"Speaker Notes:\n{payload['speaker_notes']}"
-                ).strip()
+            for i, slide in enumerate(prs.slides, start=1):
+                narration = narration_map.get(i)
+                if not narration:
+                    continue
 
                 notes_slide = slide.notes_slide
                 tf = notes_slide.notes_text_frame
 
                 if mode == "append":
                     existing = (tf.text or "").strip()
-                    tf.text = f"{existing}\n\n--- Generated Narration ---\n{new_text}".strip() if existing else new_text
+                    tf.text = (
+                        f"{existing}\n\n{marker}\n{narration}".strip()
+                        if existing
+                        else narration
+                    )
                 else:
-                    tf.text = new_text
+                    tf.text = narration
 
             prs.save(str(file_path))
             logger.info("Generated PPTX output: %s", file_path)
