@@ -88,96 +88,126 @@ class PPTXExtractor:
                 speaker_notes_list.append(self._extract_speaker_notes(slide))
                 original_text_list.append(self._extract_slide_text(slide))
 
-            logger.info("Converting PPTX to PDF using LibreOffice (soffice)...")
-            
-            # Create directories
-            pdf_dir = self.temp_dir / "rendered_pdf"
-            pdf_dir.mkdir(parents=True, exist_ok=True)
-            self.temp_files.append(pdf_dir)
-            
-            png_dir = self.temp_dir / "rendered_png"
-            png_dir.mkdir(parents=True, exist_ok=True)
-            self.temp_files.append(png_dir)
+            # Check dependencies first
+            soffice_path = shutil.which("soffice")
+            pdftoppm_path = shutil.which("pdftoppm")
+            logger.info(f"External tools check: soffice={'FOUND' if soffice_path else 'MISSING'}, pdftoppm={'FOUND' if pdftoppm_path else 'MISSING'}")
 
-            soffice_cmd = self._resolve_soffice_cmd()
-            
-            # Step 1: PPTX -> PDF
-            pdf_out = pdf_dir / f"{pptx_path.stem}.pdf"
-            self.temp_files.append(pdf_out)
+            # Attempt Image Conversion
+            try:
+                logger.info("Converting PPTX to PDF using LibreOffice (soffice)...")
+                
+                # Create directories
+                pdf_dir = self.temp_dir / "rendered_pdf"
+                pdf_dir.mkdir(parents=True, exist_ok=True)
+                self.temp_files.append(pdf_dir)
+                
+                png_dir = self.temp_dir / "rendered_png"
+                png_dir.mkdir(parents=True, exist_ok=True)
+                self.temp_files.append(png_dir)
 
-            subprocess.run(
-                [
-                    soffice_cmd,
-                    "--headless",
-                    "--nologo",
-                    "--nolockcheck",
-                    "--nodefault",
-                    "--norestore",
-                    "--convert-to",
-                    "pdf:impress_pdf_Export",
-                    "--outdir",
-                    str(pdf_dir),
-                    str(pptx_path),
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-            )
+                soffice_cmd = self._resolve_soffice_cmd()
+                
+                # Step 1: PPTX -> PDF
+                pdf_out = pdf_dir / f"{pptx_path.stem}.pdf"
+                self.temp_files.append(pdf_out)
 
-            # Find the generated PDF file
-            pdf_candidates = list(pdf_dir.glob("*.pdf"))
-            if not pdf_candidates:
-                raise Exception("LibreOffice did not produce a PDF file")
-            pdf_out = pdf_candidates[0]
-            self.temp_files.append(pdf_out)
-
-            logger.info(f"PDF created: {pdf_out}")
-            logger.info("Converting PDF to PNG using pdftoppm...")
-
-            # Step 2: PDF -> PNG using pdftoppm
-            pdftoppm_cmd = shutil.which("pdftoppm")
-            if not pdftoppm_cmd:
-                raise FileNotFoundError(
-                    "pdftoppm not found. Install 'poppler-utils' in the runtime image to enable PDF-to-PNG conversion."
+                subprocess.run(
+                    [
+                        soffice_cmd,
+                        "--headless",
+                        "--nologo",
+                        "--nolockcheck",
+                        "--nodefault",
+                        "--norestore",
+                        "--convert-to",
+                        "pdf:impress_pdf_Export",
+                        "--outdir",
+                        str(pdf_dir),
+                        str(pptx_path),
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
                 )
 
-            # Generate PNG files with prefix
-            out_prefix = str(png_dir / "slide")
-            result = subprocess.run(
-                [
-                    pdftoppm_cmd,
-                    "-png",
-                    "-r", "150",  # Lower resolution
-                    "-scale-to-x", "1280",  # Constrain width
-                    "-scale-to-y", "-1",  # Maintain aspect ratio
-                    str(pdf_out),
-                    out_prefix,
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-            )
+                # Find the generated PDF file
+                pdf_candidates = list(pdf_dir.glob("*.pdf"))
+                if not pdf_candidates:
+                    raise Exception("LibreOffice did not produce a PDF file")
+                pdf_out = pdf_candidates[0]
+                self.temp_files.append(pdf_out)
 
-            # Get generated PNG files
-            png_files = list(png_dir.glob("*.png"))
-            
-            def _slide_sort_key(p: Path):
-                m = re.search(r"(\d+)(?=\D*$)", p.stem)
-                return int(m.group(1)) if m else 10**9
+                logger.info(f"PDF created: {pdf_out}")
+                logger.info("Converting PDF to PNG using pdftoppm...")
 
-            png_files = sorted(png_files, key=_slide_sort_key)
-            
-            # Take only the number of slides we expect
-            if len(png_files) > total_slides:
-                png_files = png_files[:total_slides]
-            
-            image_paths = [p for p in png_files]
-            for p in image_paths:
-                self.temp_files.append(p)
+                # Step 2: PDF -> PNG using pdftoppm
+                pdftoppm_cmd = shutil.which("pdftoppm")
+                if not pdftoppm_cmd:
+                    raise FileNotFoundError(
+                        "pdftoppm not found. Install 'poppler-utils' to enable PDF-to-PNG conversion."
+                    )
 
-            logger.info(f"Successfully converted {len(image_paths)} slides to images")
+                # Generate PNG files with prefix
+                out_prefix = str(png_dir / "slide")
+                result = subprocess.run(
+                    [
+                        pdftoppm_cmd,
+                        "-png",
+                        "-r", "150",  # Lower resolution
+                        "-scale-to-x", "1280",  # Constrain width
+                        "-scale-to-y", "-1",  # Maintain aspect ratio
+                        str(pdf_out),
+                        out_prefix,
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                )
+
+                # Get generated PNG files
+                png_files = list(png_dir.glob("*.png"))
+                
+                def _slide_sort_key(p: Path):
+                    m = re.search(r"(\d+)(?=\D*$)", p.stem)
+                    return int(m.group(1)) if m else 10**9
+
+                png_files = sorted(png_files, key=_slide_sort_key)
+                
+                # Take only the number of slides we expect
+                if len(png_files) > total_slides:
+                    png_files = png_files[:total_slides]
+                
+                image_paths = [p for p in png_files]
+                for p in image_paths:
+                    self.temp_files.append(p)
+
+                logger.info(f"Successfully converted {len(image_paths)} slides to images")
+                
+                return image_paths, speaker_notes_list, original_text_list
+
+            except subprocess.CalledProcessError as e:
+                error_msg = f"Subprocess failed: {e.cmd}"
+                if e.stderr:
+                    error_msg += f"\nStderr: {e.stderr.decode()}"
+                if e.stdout:
+                    error_msg += f"\nStdout: {e.stdout.decode()}"
+                logger.error(error_msg)
+                # Return partial results (text/notes) even if images fail
+                return [], speaker_notes_list, original_text_list
+
+            except Exception as e:
+                logger.error(f"Image generation failed (continuing without images): {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return [], speaker_notes_list, original_text_list
+                # We return empty image_paths, but still return text/notes
+                # The processor must handle the case where image_paths is empty or mismatched
+
+            # If image generation failed, we might have 0 images. 
+            # If it succeeded but slide count mismatch, that's handled by processor.
             return image_paths, speaker_notes_list, original_text_list
 
         except Exception as e:
-            logger.error(f"Failed to convert PPTX to images: {e}")
-            raise Exception(f"Failed to convert PPTX to images: {str(e)}")
+            logger.error(f"Failed to extract content from PPTX: {e}")
+            raise Exception(f"Failed to extract content from PPTX: {str(e)}")

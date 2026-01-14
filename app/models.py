@@ -45,6 +45,7 @@ class SlideOutput(BaseModel):
     speaker_notes: str
     narration_paragraph: str
     polished_narration: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 class OutputFile(BaseModel):

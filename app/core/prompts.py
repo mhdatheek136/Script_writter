@@ -126,6 +126,8 @@ Structure requirements for THIS slide:
 - Explain the slide content meaningfully (do not read or restate bullets verbatim).
 - Incorporate relevant speaker notes naturally, only when they add value and context.
 - {closing_transition_instruction}
+
+The following custom instructions must be followed if provided:
 {custom_instructions_block}
 
 Return your response as a JSON object with exactly this key:

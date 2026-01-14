@@ -117,6 +117,8 @@ class OutputGenerator:
         filename = f"{base}_{self._run_suffix()}_narration.json"
         file_path = self.output_dir / filename
         try:
+            # Result already contains slides with: rewritten_content, speaker_notes, narration_paragraph
+            # We just dump it.
             payload = json.dumps(result, indent=2, ensure_ascii=False)
             self._atomic_write_text(file_path, payload)
             logger.info("Generated JSON output: %s", file_path)
@@ -130,7 +132,8 @@ class OutputGenerator:
         filename = f"{base}_{self._run_suffix()}_narration.txt"
         file_path = self.output_dir / filename
         try:
-            slides = self._validate_slides(result)
+            # Slides validation here if needed, but we trust 'result' structure generally
+            slides = result.get("slides", [])
 
             lines: List[str] = [
                 f"Narration Script for {base_name}",
@@ -139,16 +142,23 @@ class OutputGenerator:
             ]
 
             for slide in slides:
-                slide_num = slide["slide_number"] if slide["slide_number"] is not None else "?"
+                slide_num = slide.get("slide_number", "?")
+                raw_content = slide.get("rewritten_content", "(No content)")
+                notes = slide.get("speaker_notes", "(No notes)")
+                narration = slide.get("narration_paragraph", "(No narration)")
+
                 lines.extend(
                     [
                         f"Slide {slide_num}",
                         "-" * 20,
-                        "Narration:",
-                        slide["narration_paragraph"],
+                        "RAW CONTENT:",
+                        raw_content,
                         "",
-                        "Speaker Notes:",
-                        slide["speaker_notes"],
+                        "SPEAKER NOTES:",
+                        notes,
+                        "",
+                        "GENERATED NARRATION:",
+                        narration,
                         "",
                         "=" * 50,
                         "",
@@ -167,25 +177,27 @@ class OutputGenerator:
         filename = f"{base}_{self._run_suffix()}_narration.docx"
         file_path = self.output_dir / filename
         try:
-            slides = self._validate_slides(result)
+            slides = result.get("slides", [])
 
             doc = Document()
             doc.add_heading(f"Narration Script for {base_name}", 0)
 
             for idx, slide in enumerate(slides):
-                slide_num = slide["slide_number"] if slide["slide_number"] is not None else "?"
+                slide_num = slide.get("slide_number", "?")
                 doc.add_heading(f"Slide {slide_num}", level=1)
 
-                doc.add_heading("Narration:", level=2)
-                doc.add_paragraph(slide["narration_paragraph"])
+                doc.add_heading("Raw Content:", level=2)
+                doc.add_paragraph(slide.get("rewritten_content", ""))
 
                 doc.add_heading("Speaker Notes:", level=2)
-                doc.add_paragraph(slide["speaker_notes"])
+                doc.add_paragraph(slide.get("speaker_notes", ""))
+
+                doc.add_heading("Generated Narration:", level=2)
+                doc.add_paragraph(slide.get("narration_paragraph", ""))
 
                 if idx != len(slides) - 1:
                     doc.add_page_break()
 
-            # python-docx doesn't provide atomic save; keep output dir reliable instead.
             doc.save(file_path)
             logger.info("Generated Word output: %s", file_path)
             return file_path

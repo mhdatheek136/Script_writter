@@ -15,7 +15,9 @@ const Toast = ({ message, type, onClose }) => {
     }, [onClose]);
 
     return (
-        <div className={`fixed bottom-8 right-8 z-[3000] px-6 py-4 rounded-2xl shadow-2xl animate-soft-in border flex items-center gap-3 ${type === 'error' ? 'bg-rose-500 text-white border-rose-600' : 'bg-soft-teal text-black border-soft-teal'
+        <div className={`fixed bottom-8 right-8 z-[3000] px-6 py-4 rounded-2xl shadow-xl animate-soft-in border flex items-center gap-3 ${type === 'error'
+            ? 'bg-white dark:bg-rose-500 border-rose-200 dark:border-rose-600 text-rose-600 dark:text-white'
+            : 'bg-white dark:bg-soft-teal border-slate-200 dark:border-soft-teal text-slate-800 dark:text-black'
             }`}>
             <span className="text-[0.65rem] font-bold uppercase tracking-widest">{message}</span>
             <button onClick={onClose} className="opacity-60 hover:opacity-100">
@@ -27,7 +29,7 @@ const Toast = ({ message, type, onClose }) => {
 
 function App() {
     const [currentResults, setCurrentResults] = useState(null);
-    const [isLoading, setIsLoading] = useState(false);
+    const [processingStatus, setProcessingStatus] = useState({ active: false, percentage: 0, message: '', sessionId: null });
     const [error, setError] = useState(null);
     const [showResetModal, setShowResetModal] = useState(false);
     const [isStudioMode, setIsStudioMode] = useState(false);
@@ -95,6 +97,7 @@ function App() {
         setCurrentResults(data);
         setError(null);
         addToast('Presentation processed successfully');
+        setProcessingStatus({ active: false, percentage: 0, message: '', sessionId: null });
     };
 
     const performReset = () => {
@@ -126,8 +129,8 @@ function App() {
                             isCollapsed={isSidebarCollapsed}
                             setCollapsed={setIsSidebarCollapsed}
                             onReset={() => currentResults ? setShowResetModal(true) : performReset()}
-                            isLoading={isLoading}
-                            setIsLoading={setIsLoading}
+                            processingStatus={processingStatus}
+                            setProcessingStatus={setProcessingStatus}
                             onProcessComplete={handleProcessComplete}
                             setError={setError}
                             isDarkMode={isDarkMode}
@@ -202,15 +205,24 @@ function App() {
                         )
                     )}
 
-                    {isLoading && !isStudioMode && (
-                        <div className="fixed inset-0 bg-black/70 backdrop-blur-2xl z-[200] flex flex-col items-center justify-center animate-in fade-in duration-500">
-                            <div className="relative w-16 h-16 mb-8">
-                                <div className="absolute inset-0 border-4 border-slate-800/30 rounded-full" />
-                                <div className="absolute inset-0 border-4 border-soft-teal rounded-full border-t-transparent animate-spin shadow-lg" />
+                    {processingStatus.active && !isStudioMode && (
+                        <div className="fixed inset-0 bg-white/90 dark:bg-black/80 backdrop-blur-2xl z-[200] flex flex-col items-center justify-center animate-in fade-in duration-500">
+                            <div className="w-full max-w-md px-8">
+                                <div className="flex justify-between text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">
+                                    <span>Processing</span>
+                                    <span>{processingStatus.percentage}%</span>
+                                </div>
+                                <div className="w-full h-1 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden mb-8">
+                                    <div
+                                        className="h-full bg-soft-navy dark:bg-soft-teal transition-all duration-500 ease-out"
+                                        style={{ width: `${processingStatus.percentage}%` }}
+                                    />
+                                </div>
+                                <div className="text-center space-y-2">
+                                    <p className="font-bold text-sm text-slate-800 dark:text-white">{processingStatus.message || 'Analyzing presentation structure...'}</p>
+                                    <p className="text-xs text-slate-500">Please do not close this window</p>
+                                </div>
                             </div>
-                            <p className="font-bold text-[0.6rem] uppercase tracking-[0.4em] text-white">
-                                Processing Presentation
-                            </p>
                         </div>
                     )}
 

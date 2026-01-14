@@ -3,14 +3,18 @@ import uuid
 import shutil
 import logging
 import tempfile
+import json
 from pathlib import Path
+from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from typing import Optional, List, Dict, Any
+
 from app.models import ProcessResponse
 from app.core.slide_processor import SlideProcessor
 from app.output_generator import OutputGenerator
+from app.core.progress_tracker import ProgressStore
 
 # Configure logging
 logging.basicConfig(
@@ -30,13 +34,80 @@ MAX_SLIDES = int(os.getenv("MAX_SLIDES", "30"))
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY environment variable is required")
 
+# Create directories
+BASE_TMP = Path(os.getenv("TEMP_BASE_DIR", "/tmp"))
+
+temp_output_dir = BASE_TMP / "temp_outputs"
+temp_output_dir.mkdir(parents=True, exist_ok=True)
+
+temp_upload_dir = BASE_TMP / "temp_uploads"
+temp_upload_dir.mkdir(parents=True, exist_ok=True)
+
+
+def cleanup_old_files():
+    """Delete files older than 1 hour in temp directories."""
+    import time
+    now = time.time()
+    cutoff = now - 3600  # 1 hour ago
+    
+    for directory in [temp_output_dir, temp_upload_dir]:
+        if not directory.exists():
+            continue
+        for file_path in directory.glob("*"):
+            try:
+                if file_path.stat().st_mtime < cutoff:
+                    if file_path.is_file():
+                        file_path.unlink()
+                    elif file_path.is_dir():
+                        shutil.rmtree(file_path)
+                    logger.info(f"Cleaned up old file/dir: {file_path}")
+            except Exception as e:
+                logger.error(f"Error during cleanup of {file_path}: {e}")
+
+
+def run_processing_background(
+    session_id: str,
+    file_path: Path,
+    params: Dict[str, Any],
+    api_key: str,
+    model: str
+):
+    """
+    Background worker to run the slide processor and save results.
+    """
+    store = ProgressStore()
+    
+    try:
+        processor = SlideProcessor(api_key, model)
+        result = processor.process_pptx(
+            file_path,
+            session_id=session_id,
+            **params
+        )
+        
+        # Save result to session file
+        result_path = temp_output_dir / f"{session_id}_result.json"
+        
+        # Inject base_name if missing (processor normally handles it but let's be safe)
+        if "base_name" not in result:
+           result["base_name"] = file_path.stem
+
+        with open(result_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, default=str)
+            
+        store.update(session_id, "complete", 100, "Ready")
+        
+    except Exception as e:
+        logger.error(f"Background processing failed for {session_id}: {e}")
+        store.update(session_id, "failed", 0, str(e))
+
 
 @app.get("/", response_class=FileResponse)
 async def root():
     """Serve the main UI."""
     index_path = Path(__file__).parent.parent / "frontend" / "dist" / "index.html"
     if index_path.exists():
-        return FileResponse(str(index_path))  # minimal: FileResponse is happiest with str
+        return FileResponse(str(index_path))
     raise HTTPException(status_code=404, detail="React build not found. Please run 'npm run build' in the frontend directory.")
 
 
@@ -64,15 +135,12 @@ async def rewrite_narration(
         logger.info(f"User request: {user_request}")
         logger.info(f"Tone: {tone}")
         
-        # Validate request
         if not user_request.strip():
             raise HTTPException(status_code=400, detail="User request cannot be empty")
         
-        # Create LLM client
         from app.services.llm_client import LLMClient
         llm_client = LLMClient(GEMINI_API_KEY, GEMINI_MODEL)
         
-        # Call rewrite method
         new_narration = llm_client.rewrite_narration(
             current_narration=current_narration,
             rewritten_content=rewritten_content,
@@ -89,11 +157,49 @@ async def rewrite_narration(
             "rewritten_narration": new_narration
         })
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Rewrite failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to rewrite narration: {str(e)}")
+
+
+class RefineRequest(BaseModel):
+    current_text: str
+    instruction: str
+    slide_context: str
+    tone: str = "Professional"
+
+
+@app.post("/api/refine-narration")
+async def refine_narration(request: RefineRequest):
+    """
+    Refine narration based on user instruction (JSON).
+    """
+    try:
+        logger.info(f"=== NARRATION REFINE REQUEST ===")
+        logger.info(f"Instruction: {request.instruction}")
+        
+        if not request.instruction.strip():
+            raise HTTPException(status_code=400, detail="Instruction cannot be empty")
+            
+        from app.services.llm_client import LLMClient
+        llm_client = LLMClient(GEMINI_API_KEY, GEMINI_MODEL)
+        
+        new_narration = llm_client.rewrite_narration(
+            current_narration=request.current_text,
+            rewritten_content=request.slide_context,
+            speaker_notes="",
+            user_request=request.instruction,
+            tone=request.tone
+        )
+        
+        return JSONResponse({
+            "success": True,
+            "refined_text": new_narration
+        })
+        
+    except Exception as e:
+        logger.error(f"Refine failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/global-rewrite")
@@ -134,7 +240,7 @@ async def global_rewrite(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/process", response_model=ProcessResponse)
+@app.post("/api/process")
 async def process_presentation(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -149,92 +255,102 @@ async def process_presentation(
     custom_instructions: Optional[str] = Form(None)
 ):
     """
-    Process a PowerPoint file and return rewritten content, speaker notes, and narration.
+    Async upload: returns session_id immediately. Client should poll /api/progress/{session_id}.
     """
     logger.info("=" * 80)
-    logger.info("NEW REQUEST RECEIVED")
+    logger.info("NEW REQUEST RECEIVED (Async)")
     logger.info(f"File: {file.filename}")
-    logger.info(f"Tone: {tone}, Audience: {audience_level}")
-    logger.info(f"Custom Instructions: {custom_instructions}")
-    logger.info("=" * 80)
     
-    # Run cleanup of old files in background
+    # Run cleanup
     background_tasks.add_task(cleanup_old_files)
     
-    # Validate file
     if not file.filename.endswith('.pptx'):
-        logger.error(f"Invalid file type: {file.filename}")
         raise HTTPException(status_code=400, detail="Only .pptx files are supported")
     
-    # Generate session ID and temp paths
     session_id = str(uuid.uuid4())
     base_name = Path(file.filename).stem
     
-    # Save uploaded file to persistent temp storage for this session
+    # Save file
     session_upload_path = temp_upload_dir / f"{session_id}.pptx"
-    
-    # Validate file size
     file_content = await file.read()
     if len(file_content) > MAX_FILE_SIZE:
-        logger.error(f"File size exceeds maximum")
         raise HTTPException(status_code=400, detail="File too large")
         
     with open(session_upload_path, "wb") as f:
         f.write(file_content)
     
-    logger.info(f"Saved session file to: {session_upload_path}")
+    # Prepare params
+    params = {
+        "tone": tone,
+        "audience_level": audience_level,
+        "narration_style": narration_style,
+        "dynamic_length": dynamic_length,
+        "include_speaker_notes": include_speaker_notes,
+        "enable_polishing": enable_polishing,
+        "min_words": min_words if not dynamic_length else None,
+        "max_words_fixed": max_words_fixed if not dynamic_length else None,
+        "custom_instructions": custom_instructions
+    }
     
-    try:
-        # Initialize processor
-        processor = SlideProcessor(GEMINI_API_KEY, GEMINI_MODEL)
-        
-        # Process the presentation
-        result = processor.process_pptx(
-            session_upload_path,
-            tone=tone,
-            audience_level=audience_level,
-            narration_style=narration_style,
-            dynamic_length=dynamic_length,
-            include_speaker_notes=include_speaker_notes,
-            enable_polishing=enable_polishing,
-            min_words=min_words if not dynamic_length else None,
-            max_words_fixed=max_words_fixed if not dynamic_length else None,
-            custom_instructions=custom_instructions
-        )
-        
-        if result["success"]:
-            # Validate slide count
-            if result["total_slides"] > MAX_SLIDES:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Presentation has {result['total_slides']} slides, maximum is {MAX_SLIDES}"
-                )
-            
-            # Return session info and slide data
-            # No files generated yet!
-            result["session_id"] = session_id
-            result["base_name"] = base_name
-            
-            logger.info("Returning results with session ID")
-            return ProcessResponse(**result)
-        else:
-            return ProcessResponse(
-                success=False,
-                total_slides=0,
-                slides=[],
-                error=result.get("error", "Processing failed")
-            )
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        return ProcessResponse(
+    # Start background task
+    background_tasks.add_task(
+        run_processing_background,
+        session_id,
+        session_upload_path,
+        params,
+        GEMINI_API_KEY,
+        GEMINI_MODEL
+    )
+    
+    ProgressStore().update(session_id, "queued", 0, "Request accepted")
+    
+    return {
+        "success": True, 
+        "session_id": session_id,
+        "base_name": base_name,
+        "message": "Processing started"
+    }
+
+
+@app.get("/api/result/{session_id}", response_model=ProcessResponse)
+async def get_result(session_id: str):
+    """
+    Get final processing result for a session.
+    """
+    import json
+    result_path = temp_output_dir / f"{session_id}_result.json"
+    
+    store = ProgressStore()
+    status = store.get(session_id)
+    
+    if status["status"] == "failed":
+         return ProcessResponse(
             success=False,
             total_slides=0,
             slides=[],
-            error=str(e)
+            error=status.get("details", "Processing failed")
         )
+
+    if not result_path.exists():
+        if status["status"] == "unknown":
+            raise HTTPException(status_code=404, detail="Session not found")
+        else:
+            # Still running
+            raise HTTPException(status_code=202, detail="Processing in progress")
+            
+    try:
+        with open(result_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        data["session_id"] = session_id
+        if "base_name" not in data:
+            data["base_name"] = "presentation" 
+            
+        return ProcessResponse(**data)
+        
+    except Exception as e:
+        logger.error(f"Failed to read result: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve result")
 
 
 @app.post("/api/generate-output")
@@ -245,7 +361,7 @@ async def generate_output(
     slides_json: str = Form(...)
 ):
     """
-    Generate a specific output format on-demand using current slide data.
+    Generate a specific output format.
     """
     try:
         import json
@@ -257,7 +373,7 @@ async def generate_output(
         }
         
         output_generator = OutputGenerator()
-        generated_path = None  # FIX: treat this as a Path
+        generated_path = None 
         
         if format_type == "json":
             generated_path = output_generator.generate_json(result, base_name)
@@ -276,7 +392,6 @@ async def generate_output(
         if not generated_path:
             raise HTTPException(status_code=400, detail="Invalid format or generation failed")
         
-        # FIX: FileResponse expects str path + str filename (not Path)
         return FileResponse(
             path=str(generated_path),
             filename=generated_path.name,
@@ -295,13 +410,33 @@ async def download_file(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
-    # minimal: pass strings to FileResponse
     return FileResponse(
         path=str(file_path),
         filename=Path(filename).name,
         media_type="application/octet-stream"
     )
 
+@app.get("/api/progress/{session_id}")
+async def get_progress(session_id: str):
+    """Get progress status for a session."""
+    store = ProgressStore()
+    return store.get(session_id)
+
+@app.get("/api/images/{session_id}/{filename}")
+async def get_slide_image(session_id: str, filename: str):
+    """Serve a slide image from the session directory."""
+    # Use consistent temp_output_dir logic defined at top of main.py
+    # temp_output_dir = BASE_TMP / "temp_outputs"
+    file_path = temp_output_dir / session_id / "images" / filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+        
+    return FileResponse(
+        path=str(file_path),
+        filename=filename,
+        media_type="image/png"
+    )
 
 # Mount static files (for CSS and JS)
 frontend_dist = Path(__file__).parent.parent / "frontend" / "dist" / "assets"
@@ -313,39 +448,9 @@ async def serve_frontend(rest_of_path: str):
     dist_dir = Path(__file__).parent.parent / "frontend" / "dist"
     file_path = dist_dir / rest_of_path
     if file_path.exists() and file_path.is_file():
-        return FileResponse(str(file_path))  # minimal: str
+        return FileResponse(str(file_path))
     # Default to index.html for React routing
     index_path = dist_dir / "index.html"
     if index_path.exists():
-        return FileResponse(str(index_path))  # minimal: str
+        return FileResponse(str(index_path))
     raise HTTPException(status_code=404, detail="Not Found")
-
-# Create directories
-BASE_TMP = Path(os.getenv("TEMP_BASE_DIR", "/tmp"))
-
-temp_output_dir = BASE_TMP / "temp_outputs"
-temp_output_dir.mkdir(parents=True, exist_ok=True)
-
-temp_upload_dir = BASE_TMP / "temp_uploads"
-temp_upload_dir.mkdir(parents=True, exist_ok=True)
-
-
-def cleanup_old_files():
-    """Delete files older than 1 hour in temp directories."""
-    import time
-    now = time.time()
-    cutoff = now - 3600  # 1 hour ago
-    
-    for directory in [temp_output_dir, temp_upload_dir]:
-        if not directory.exists():
-            continue
-        for file_path in directory.glob("*"):
-            try:
-                if file_path.stat().st_mtime < cutoff:
-                    if file_path.is_file():
-                        file_path.unlink()
-                    elif file_path.is_dir():
-                        shutil.rmtree(file_path)
-                    logger.info(f"Cleaned up old file/dir: {file_path}")
-            except Exception as e:
-                logger.error(f"Error during cleanup of {file_path}: {e}")

@@ -4,8 +4,8 @@ const Sidebar = ({
   isCollapsed,
   setCollapsed,
   onReset,
-  isLoading,
-  setIsLoading,
+  processingStatus,
+  setProcessingStatus,
   onProcessComplete,
   setError,
   isDarkMode,
@@ -43,22 +43,67 @@ const Sidebar = ({
       return;
     }
 
-    setIsLoading(true);
+    setProcessingStatus({ active: true, percentage: 0, message: 'Initiating upload...', sessionId: null });
     setError(null);
 
     const data = new FormData();
     data.append('file', file);
     Object.keys(formData).forEach((key) => data.append(key, formData[key]));
 
+    // Validate polling function
+    const pollProgress = async (sessionId) => {
+      try {
+        const response = await fetch(`/api/progress/${sessionId}`);
+        if (!response.ok) throw new Error('Failed to fetch progress');
+        const update = await response.json();
+
+        if (update.status === 'failed') {
+          setProcessingStatus({ active: false, percentage: 0, message: '', sessionId: null });
+          setError(update.details || 'Processing failed');
+          addToast('Processing failed', 'error');
+          return;
+        }
+
+        setProcessingStatus(prev => ({
+          ...prev,
+          percentage: update.percentage,
+          message: update.details
+        }));
+
+        if (update.status === 'complete') {
+          // Fetch final results
+          const resultResponse = await fetch(`/api/result/${sessionId}`);
+          if (!resultResponse.ok) throw new Error('Failed to fetch results');
+          const resultData = await resultResponse.json();
+
+          onProcessComplete(resultData);
+          // Status clear handled by App.jsx or here? App.jsx handles it in onProcessComplete
+        } else {
+          // Continue polling
+          setTimeout(() => pollProgress(sessionId), 1000);
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+        // Retry
+        setTimeout(() => pollProgress(sessionId), 2000);
+      }
+    };
+
     try {
       const response = await fetch('/api/process', { method: 'POST', body: data });
       if (!response.ok) throw new Error(await response.text());
-      onProcessComplete(await response.json());
+      const responseData = await response.json();
+
+      if (responseData.session_id) {
+        setProcessingStatus(prev => ({ ...prev, sessionId: responseData.session_id, message: 'Upload complete. Processing...' }));
+        pollProgress(responseData.session_id);
+      } else {
+        throw new Error("No session ID returned");
+      }
     } catch (err) {
+      setProcessingStatus({ active: false, percentage: 0, message: '', sessionId: null });
       setError(err.message);
       addToast('Processing failed', 'error');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -78,10 +123,9 @@ const Sidebar = ({
 
   const baseInput =
     `w-full px-4 py-3 rounded-xl border transition-all text-xs font-bold font-sans outline-none ` +
-    `${
-      isDarkMode
-        ? 'bg-ui-surface-dark border-slate-800 text-white focus:border-soft-teal'
-        : 'bg-white border-slate-100 text-slate-700 focus:border-soft-navy shadow-sm'
+    `${isDarkMode
+      ? 'bg-ui-surface-dark border-slate-800 text-white focus:border-soft-teal'
+      : 'bg-white border-slate-100 text-slate-700 focus:border-soft-navy shadow-sm'
     }`;
 
   const selectClasses =
@@ -133,9 +177,8 @@ const Sidebar = ({
 
   return (
     <aside
-      className={`h-full flex flex-col transition-all duration-500 overflow-visible relative ${
-        isDarkMode ? 'bg-ui-bg-dark border-r border-soft-border-dark' : 'bg-slate-50 border-r border-soft-border'
-      }`}
+      className={`h-full flex flex-col transition-all duration-500 overflow-visible relative ${isDarkMode ? 'bg-ui-bg-dark border-r border-soft-border-dark' : 'bg-slate-50 border-r border-soft-border'
+        }`}
     >
       {/* Header Area with Theme Toggle */}
       <div className={`p-6 border-b ${isDarkMode ? 'border-soft-border-dark' : 'border-soft-border'}`}>
@@ -143,11 +186,10 @@ const Sidebar = ({
           <div className="flex items-center justify-between gap-3">
             <button
               onClick={onReset}
-              className={`group flex items-center justify-center gap-3 flex-1 py-4 rounded-2xl transition-all duration-300 font-bold text-xs uppercase tracking-widest px-4 ${
-                isDarkMode
-                  ? 'bg-ui-surface-dark hover:bg-slate-800/40 text-soft-teal'
-                  : 'bg-white hover:bg-slate-50 border border-soft-border text-soft-navy shadow-sm'
-              }`}
+              className={`group flex items-center justify-center gap-3 flex-1 py-4 rounded-2xl transition-all duration-300 font-bold text-xs uppercase tracking-widest px-4 ${isDarkMode
+                ? 'bg-ui-surface-dark hover:bg-slate-800/40 text-soft-teal'
+                : 'bg-white hover:bg-slate-50 border border-soft-border text-soft-navy shadow-sm'
+                }`}
               type="button"
             >
               <svg
@@ -186,11 +228,10 @@ const Sidebar = ({
         ) : (
           <button
             onClick={onReset}
-            className={`group flex items-center justify-center w-full py-4 rounded-2xl transition-all duration-300 font-bold text-xs uppercase tracking-widest ${
-              isDarkMode
-                ? 'bg-ui-surface-dark hover:bg-slate-800/40 text-soft-teal'
-                : 'bg-white hover:bg-slate-50 border border-soft-border text-soft-navy shadow-sm'
-            }`}
+            className={`group flex items-center justify-center w-full py-4 rounded-2xl transition-all duration-300 font-bold text-xs uppercase tracking-widest ${isDarkMode
+              ? 'bg-ui-surface-dark hover:bg-slate-800/40 text-soft-teal'
+              : 'bg-white hover:bg-slate-50 border border-soft-border text-soft-navy shadow-sm'
+              }`}
             type="button"
           >
             <svg
@@ -223,11 +264,10 @@ const Sidebar = ({
               accept=".pptx"
             />
             <div
-              className={`flex items-center gap-4 p-4 rounded-2xl border border-dashed transition-all ${
-                isDarkMode
-                  ? 'bg-black/20 border-slate-800 group-hover:border-soft-teal'
-                  : 'bg-white border-slate-200 group-hover:border-soft-navy shadow-sm'
-              }`}
+              className={`flex items-center gap-4 p-4 rounded-2xl border border-dashed transition-all ${isDarkMode
+                ? 'bg-black/20 border-slate-800 group-hover:border-soft-teal'
+                : 'bg-white border-slate-200 group-hover:border-soft-navy shadow-sm'
+                }`}
             >
               <svg
                 viewBox="0 0 24 24"
@@ -316,26 +356,24 @@ const Sidebar = ({
             <div className={`p-1 rounded-xl flex gap-1 ${isDarkMode ? 'bg-black/40' : 'bg-slate-200/50 shadow-inner'}`}>
               <button
                 onClick={() => setFormData({ ...formData, dynamic_length: true })}
-                className={`flex-1 py-2 rounded-lg text-[0.6rem] font-bold uppercase transition-all ${
-                  formData.dynamic_length
-                    ? isDarkMode
-                      ? 'bg-soft-teal text-black'
-                      : 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-500'
-                }`}
+                className={`flex-1 py-2 rounded-lg text-[0.6rem] font-bold uppercase transition-all ${formData.dynamic_length
+                  ? isDarkMode
+                    ? 'bg-soft-teal text-black'
+                    : 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500'
+                  }`}
                 type="button"
               >
                 Dynamic
               </button>
               <button
                 onClick={() => setFormData({ ...formData, dynamic_length: false })}
-                className={`flex-1 py-2 rounded-lg text-[0.6rem] font-bold uppercase transition-all ${
-                  !formData.dynamic_length
-                    ? isDarkMode
-                      ? 'bg-soft-teal text-black'
-                      : 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-500'
-                }`}
+                className={`flex-1 py-2 rounded-lg text-[0.6rem] font-bold uppercase transition-all ${!formData.dynamic_length
+                  ? isDarkMode
+                    ? 'bg-soft-teal text-black'
+                    : 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500'
+                  }`}
                 type="button"
               >
                 Fixed
@@ -413,19 +451,17 @@ const Sidebar = ({
 
       {/* STICKY Generate Button at Bottom */}
       <div
-        className={`p-6 border-t ${
-          isDarkMode ? 'border-soft-border-dark bg-ui-bg-dark/80' : 'border-soft-border bg-slate-50/80'
-        } backdrop-blur-md ${isCollapsed ? 'hidden' : 'block'}`}
+        className={`p-6 border-t ${isDarkMode ? 'border-soft-border-dark bg-ui-bg-dark/80' : 'border-soft-border bg-slate-50/80'
+          } backdrop-blur-md ${isCollapsed ? 'hidden' : 'block'}`}
       >
         <button
           onClick={handleProcess}
-          disabled={isLoading}
-          className={`w-full py-5 rounded-2xl font-bold text-xs uppercase tracking-[0.2em] transition-all shadow-xl active:scale-95 ${
-            isDarkMode ? 'bg-soft-teal text-black hover:scale-[1.02]' : 'bg-soft-navy text-white hover:scale-[1.02]'
-          }`}
+          disabled={processingStatus.active}
+          className={`w-full py-5 rounded-2xl font-bold text-xs uppercase tracking-[0.2em] transition-all shadow-xl active:scale-95 ${isDarkMode ? 'bg-soft-teal text-black hover:scale-[1.02]' : 'bg-soft-navy text-white hover:scale-[1.02]'
+            }`}
           type="button"
         >
-          {isLoading ? 'Processing...' : 'Generate Script'}
+          {processingStatus.active ? 'Processing...' : 'Generate Script'}
         </button>
       </div>
 

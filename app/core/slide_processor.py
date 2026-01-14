@@ -1,12 +1,14 @@
 import logging
 import tempfile
 import time
+import shutil
+import os
 from pathlib import Path
 from typing import List, Dict, Optional, Any
-import shutil
 
 from app.services.pptx_extractor import PPTXExtractor
 from app.services.llm_client import LLMClient
+from app.core.progress_tracker import ProgressStore
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,7 @@ class SlideProcessor:
         self.extractor = PPTXExtractor(self.temp_dir)
         self.timeout_per_slide = timeout_per_slide  # Timeout in seconds per slide
         self.max_retries = 3  # Maximum retries for failed slide processing
+        self.progress_store = ProgressStore()
 
     def _cleanup_temp_files(self):
         """Remove all temporary files and directories."""
@@ -45,10 +48,11 @@ class SlideProcessor:
 
     def _process_single_slide_with_retry(
         self,
-        img_path: Path,
+        img_path: Optional[Path],
         slide_num: int,
         tone: str,
-        audience_level: str
+        audience_level: str,
+        slide_text_fallback: str = ""
     ) -> str:
         """Process a single slide with retry logic and timeout handling."""
         last_exception = None
@@ -58,9 +62,19 @@ class SlideProcessor:
                 logger.info(f"Processing slide {slide_num}, attempt {attempt + 1}/{self.max_retries}")
                 
                 # Process slide with timeout consideration
-                rewritten_content = self.llm_client.process_slide_with_gemini(
-                    img_path, slide_num, tone, audience_level
-                )
+                if img_path:
+                    rewritten_content = self.llm_client.process_slide_with_gemini(
+                        img_path, slide_num, tone, audience_level
+                    )
+                else:
+                    # Fallback if no image: we just return "Processed (No Image)" or similar until we have text-only logic
+                    # Or we rely on the prompt which might be awkward without image.
+                    # Since we don't have a text-only method in LLMClient yet, 
+                    # we will just warn and return the original text as "rewritten" 
+                    # or try to use a generic text processing if available.
+                    # For now: Just pass the text through or error gently.
+                    logger.warning(f"Slide {slide_num} has no image, using text as content.")
+                    rewritten_content = f"Content: {slide_text_fallback}" 
                 
                 return rewritten_content
                 
@@ -101,78 +115,121 @@ class SlideProcessor:
         min_words: Optional[int] = None,
         max_words_fixed: Optional[int] = None,
         custom_instructions: Optional[str] = None,
+        session_id: Optional[str] = None
     ) -> Dict:
         """
         Main processing pipeline: convert PPTX, process slides, generate narration.
         """
+        session_id = session_id or "unknown_session"
         try:
+            self.progress_store.update(session_id, "starting", 0, "Initializing processing pipeline...")
+            
             logger.info("=" * 60)
             logger.info("Starting PPTX processing pipeline")
             logger.info(f"File: {pptx_path}")
             logger.info(f"Tone: {tone}, Audience: {audience_level}")
-            logger.info(f"Style: {narration_style}, Dynamic: {dynamic_length}, Polish: {enable_polishing}")
-            if custom_instructions:
-                logger.info(f"Custom Instructions: {custom_instructions}")
-            logger.info(f"Timeout per slide: {self.timeout_per_slide}s, Max retries: {self.max_retries}")
-            logger.info("=" * 60)
             
             # Step 1: Convert PPTX to images
+            self.progress_store.update(session_id, "converting", 5, "Converting slides to images...")
             logger.info("\n[STEP 1] Converting PPTX to images and extracting speaker notes...")
             image_paths, speaker_notes_list, original_text_list = self.extractor.pptx_to_images(pptx_path)
 
-            if not image_paths:
-                raise Exception("No slides found in presentation")
+            # Persist images if we have them and a session ID
+            # Target dir: {TEMP_BASE_DIR}/temp_outputs/{session_id}/images
+            persisted_image_paths = []
+            if session_id and image_paths:
+                # Use same logic as main.py
+                base_tmp = Path(os.getenv("TEMP_BASE_DIR", "/tmp"))
+                session_img_dir = base_tmp / "temp_outputs" / session_id / "images"
+                session_img_dir.mkdir(parents=True, exist_ok=True)
+                
+                logger.info(f"DEBUG: Persisting {len(image_paths)} images to {session_img_dir}")
+                
+                for idx, img in enumerate(image_paths):
+                    try:
+                        dest = session_img_dir / img.name
+                        shutil.copy2(img, dest)
+                        persisted_image_paths.append(str(dest))
+                        logger.info(f"DEBUG: Saved image {idx+1} to {dest}")
+                    except Exception as copy_err:
+                        logger.error(f"DEBUG: Failed to copy image {img} to {dest}: {copy_err}")
+            else:
+                 logger.warning(f"DEBUG: Skipping persistence. session_id={session_id}, image_paths count={len(image_paths)}")
 
+            
+            # If conversion failed fully (no images), we might have text only
+            if not image_paths and not original_text_list:
+                 raise Exception("No slides found in presentation (neither images nor text)")
+            
+            self.progress_store.update(session_id, "processing_slides", 10, f"Found {len(original_text_list)} slides. Starting analysis...")
             logger.info(f"✓ Converted {len(image_paths)} slides to images\n")
 
             # Step 2: Process slides with Gemini (with retry logic)
-            logger.info(f"[STEP 2] Processing {len(image_paths)} slides with Gemini...")
+            logger.info(f"[STEP 2] Processing slides with Gemini...")
             slide_results = []
             failed_slides = []
             
-            for i, img_path in enumerate(image_paths, start=1):
-                logger.info(f"\n--- Processing Slide {i}/{len(image_paths)} ---")
+            total_slides_count = len(original_text_list)
+            
+            for i in range(total_slides_count):
+                slide_num = i + 1
+                progress_pct = 10 + int((i / total_slides_count) * 60) # 10% to 70%
+                self.progress_store.update(session_id, "processing_slides", progress_pct, f"Analyzing Slide {slide_num}/{total_slides_count}...")
+                
+                logger.info(f"\n--- Processing Slide {slide_num}/{total_slides_count} ---")
+                
+                img_path = image_paths[i] if i < len(image_paths) else None
                 
                 try:
                     # Use retry logic for processing
                     rewritten_content = self._process_single_slide_with_retry(
-                        img_path, i, tone, audience_level
+                        img_path, slide_num, tone, audience_level, 
+                        slide_text_fallback=original_text_list[i]
                     )
 
                     # Handle speaker notes toggle
                     current_notes = ""
                     if include_speaker_notes:
-                        current_notes = speaker_notes_list[i - 1] if i - 1 < len(speaker_notes_list) else ""
+                        current_notes = speaker_notes_list[i] if i < len(speaker_notes_list) else ""
                         if not isinstance(current_notes, str):
                             current_notes = str(current_notes)
                     
                     # Get original text
-                    current_original_text = original_text_list[i - 1] if i - 1 < len(original_text_list) else ""
+                    current_original_text = original_text_list[i] if i < len(original_text_list) else ""
+                    
+                    # Store image URL/Path for frontend
+                    image_url = ""
+                    if i < len(persisted_image_paths):
+                        filename = Path(persisted_image_paths[i]).name
+                        image_url = f"/api/images/{session_id}/{filename}"
+                        logger.info(f"DEBUG: Slide {slide_num} assigned image_url: {image_url}")
+                    else:
+                        logger.warning(f"DEBUG: Slide {slide_num} has no persisted image (idx {i} >= {len(persisted_image_paths)})")
 
                     slide_results.append(
                         {
-                            "slide_number": i,
+                            "slide_number": slide_num,
                             "original_content": current_original_text,
                             "rewritten_content": rewritten_content,
                             "speaker_notes": current_notes,
+                            "image_url": image_url
                         }
                     )
 
-                    logger.info(f"✓ Slide {i} processed successfully")
-                    logger.info(f"  Rewritten content length: {len(rewritten_content)} chars")
-                    logger.info(f"  Speaker notes length: {len(current_notes)} chars")
+                    logger.info(f"✓ Slide {slide_num} processed successfully")
                     
                 except Exception as e:
-                    logger.error(f"✗ Failed to process slide {i}: {str(e)}")
-                    failed_slides.append(i)
+                    logger.error(f"✗ Failed to process slide {slide_num}: {str(e)}")
+                    failed_slides.append(slide_num)
                     
                     # Add placeholder for failed slide
                     slide_results.append(
                         {
-                            "slide_number": i,
-                            "original_content": original_text_list[i - 1] if i - 1 < len(original_text_list) else "",
+                            "slide_number": slide_num,
+                            "original_content": original_text_list[i] if i < len(original_text_list) else "",
                             "rewritten_content": f"[Error processing slide: {str(e)[:100]}]",
-                            "speaker_notes": speaker_notes_list[i - 1] if i - 1 < len(speaker_notes_list) else "",
+                            "speaker_notes": speaker_notes_list[i] if i < len(speaker_notes_list) else "",
+                            "image_url": ""
                         }
                     )
                     continue
@@ -180,9 +237,10 @@ class SlideProcessor:
             # Check if too many slides failed
             if failed_slides:
                 logger.warning(f"Failed to process {len(failed_slides)} slides: {failed_slides}")
-                if len(failed_slides) > len(image_paths) / 2:  # More than half failed
-                    raise Exception(f"Too many slides failed to process: {len(failed_slides)}/{len(image_paths)}")
+                if len(failed_slides) > total_slides_count / 2:  # More than half failed
+                    raise Exception(f"Too many slides failed to process: {len(failed_slides)}/{total_slides_count}")
 
+            self.progress_store.update(session_id, "generating_narration", 70, "Generating narration flow...")
             logger.info(f"\n✓ Processed {len(slide_results) - len(failed_slides)}/{len(slide_results)} slides successfully\n")
 
             # Step 3: Generate flowing narration
@@ -197,27 +255,21 @@ class SlideProcessor:
                 )
 
                 if len(narration_paragraphs) != len(slide_results):
-                    logger.warning(
-                        f"Narration count ({len(narration_paragraphs)}) "
-                        f"doesn't match slide count ({len(slide_results)})"
-                    )
                     # Adjust narration array to match slide count
                     if len(narration_paragraphs) < len(slide_results):
                         narration_paragraphs.extend([""] * (len(slide_results) - len(narration_paragraphs)))
                     else:
                         narration_paragraphs = narration_paragraphs[:len(slide_results)]
-                    
-                    logger.info(f"Adjusted narration array to {len(narration_paragraphs)} paragraphs")
-
+                
                 logger.info(f"✓ Generated {len(narration_paragraphs)} narration paragraphs\n")
                 
             except Exception as e:
                 logger.error(f"Failed to generate narration: {str(e)}")
-                # Create empty narration paragraphs
                 narration_paragraphs = [""] * len(slide_results)
 
             # Step 4: Polish narration if enabled
             if enable_polishing:
+                self.progress_store.update(session_id, "polishing", 85, "Polishing narration using AI...")
                 logger.info("[STEP 4] Refining narration flow...")
                 try:
                     narrations_to_refine = []
@@ -234,11 +286,11 @@ class SlideProcessor:
                         logger.info(f"✓ Refined {len(narration_paragraphs)} narration paragraphs")
                 except Exception as e:
                     logger.error(f"Failed to polish narration: {str(e)}")
-                    logger.info("Continuing with unpolished narration...")
             else:
                 logger.info("[STEP 4] Skipping narration refinement (polishing disabled)")
 
             # Step 5: Combine results
+            self.progress_store.update(session_id, "finalizing", 95, "Finalizing results...")
             logger.info("[STEP 5] Combining results...")
             final_results = []
             for idx, slide_res in enumerate(slide_results):
@@ -250,20 +302,11 @@ class SlideProcessor:
                     "processing_status": "success" if slide_res["slide_number"] not in failed_slides else "failed"
                 })
 
-            # Summary
-            logger.info("=" * 60)
-            logger.info("Processing complete!")
-            logger.info(f"Total slides: {len(final_results)}")
-            logger.info(f"Successfully processed: {len(final_results) - len(failed_slides)}")
-            logger.info(f"Failed slides: {len(failed_slides)}")
-            if failed_slides:
-                logger.info(f"Failed slide numbers: {failed_slides}")
-            logger.info("=" * 60)
-            
             # Cleanup
-            logger.info("Cleaning up temporary files...")
-            self._cleanup_temp_files()
-            logger.info("Cleanup complete")
+            logger.info("Skipping cleanup of temporary files (DEBUG MODE)...")
+            # self._cleanup_temp_files()
+            
+            self.progress_store.update(session_id, "complete", 100, "Processing complete!")
 
             return {
                 "success": True,
@@ -275,6 +318,7 @@ class SlideProcessor:
 
         except Exception as e:
             logger.error(f"Processing failed: {str(e)}")
+            self.progress_store.update(session_id, "failed", 0, str(e))
             # Cleanup on failure
             try:
                 self._cleanup_temp_files()

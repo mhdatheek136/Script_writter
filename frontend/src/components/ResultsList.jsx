@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
-import SlideBlock from './SlideBlock';
+import StudioEditor from './StudioEditor';
 import GlobalRefinement from './GlobalRefinement';
 
 const ResultsList = ({ data, setData, isDarkMode, isStudioMode, setStudioMode, addToast }) => {
-    const [currentIndex, setCurrentIndex] = useState(0);
     const [downloading, setDownloading] = useState(false);
     const [showExportOptions, setShowExportOptions] = useState(false);
 
     const slides = data.slides || [];
-    const currentSlide = slides[currentIndex];
 
     const handleDownload = async (format) => {
         if (!data.session_id) return;
@@ -39,78 +37,15 @@ const ResultsList = ({ data, setData, isDarkMode, isStudioMode, setStudioMode, a
         } finally { setDownloading(false); }
     };
 
-    const handleCopyAll = () => {
-        let script = slides.map(s => `[SLIDE ${s.slide_number}]\n\n${s.narration_paragraph}`).join('\n\n---\n\n');
-        navigator.clipboard.writeText(script);
-        addToast('Full script copied to clipboard');
-    };
-
-    const nextSlide = () => {
-        if (currentIndex < slides.length - 1) setCurrentIndex(currentIndex + 1);
-    };
-
-    const prevSlide = () => {
-        if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
-    };
-
     if (isStudioMode) {
         return (
-            <div className="fixed inset-0 z-[2000] flex flex-col bg-ui-bg-light dark:bg-ui-bg-dark animate-in fade-in duration-500 overflow-hidden">
-                <div className={`p-6 border-b border-soft-border dark:border-soft-border-dark flex items-center justify-between ${isDarkMode ? 'bg-ui-bg-dark' : 'bg-white'}`}>
-                    <div className="flex items-center gap-8">
-                        <button onClick={() => setStudioMode(false)} className="flex items-center gap-3 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all group">
-                            <div className="p-2 rounded-xl border border-soft-border dark:border-slate-800 group-hover:bg-slate-50 dark:group-hover:bg-slate-800">
-                                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="3" fill="none"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
-                            </div>
-                            <span className="text-[0.7rem] font-bold uppercase tracking-[0.2em]">Exit Editor</span>
-                        </button>
-                        <div className="h-6 w-px bg-soft-border dark:bg-soft-border-dark" />
-                        <div className="flex items-center gap-4">
-                            <button onClick={prevSlide} disabled={currentIndex === 0} className={`p-3 rounded-xl border ${currentIndex === 0 ? 'opacity-10' : 'hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'} border-soft-border dark:border-slate-800`}>
-                                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="3" fill="none"><path d="M15 18l-6-6 6-6" /></svg>
-                            </button>
-                            <div className="flex flex-col items-center min-w-[100px]">
-                                <span className="text-[0.6rem] font-bold text-slate-400 uppercase mb-0.5 tracking-widest">Progressive</span>
-                                <span className="text-sm font-black dark:text-white">{currentIndex + 1} / {slides.length}</span>
-                            </div>
-                            <button onClick={nextSlide} disabled={currentIndex === slides.length - 1} className={`p-3 rounded-xl border ${currentIndex === slides.length - 1 ? 'opacity-10' : 'hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'} border-soft-border dark:border-slate-800`}>
-                                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="3" fill="none"><path d="M9 18l6-6-6-6" /></svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-6">
-                        <button onClick={handleCopyAll} className={`px-6 py-3 rounded-xl text-[0.65rem] font-bold uppercase tracking-widest border border-soft-border dark:border-slate-800 transition-all ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}>Copy Full Script</button>
-                        <div className={`px-4 py-2 rounded-xl text-[0.65rem] font-black uppercase tracking-[0.3em] border ${isDarkMode ? 'bg-soft-teal/5 text-soft-teal border-soft-teal/20' : 'bg-soft-navy/5 text-soft-navy border-soft-navy/20'}`}>Studio Environment</div>
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-8 lg:p-16 custom-scrollbar">
-                    <div className="max-w-[1200px] mx-auto">
-                        {currentSlide && (
-                            <SlideBlock
-                                slide={currentSlide}
-                                tone={data.tone}
-                                isDarkMode={isDarkMode}
-                                addToast={addToast}
-                                onUpdate={(newText) => {
-                                    const updated = [...slides];
-                                    updated[currentIndex].narration_paragraph = newText;
-                                    setData({ ...data, slides: updated });
-                                }}
-                            />
-                        )}
-                    </div>
-                </div>
-
-                <div className="p-6 border-t border-soft-border dark:border-soft-border-dark flex justify-center">
-                    <div className="flex gap-2">
-                        {slides.map((_, i) => (
-                            <button key={i} onClick={() => setCurrentIndex(i)} className={`w-2.5 h-2.5 rounded-full transition-all ${i === currentIndex ? (isDarkMode ? 'bg-soft-teal w-8' : 'bg-soft-navy w-8') : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300'}`} />
-                        ))}
-                    </div>
-                </div>
-            </div>
+            <StudioEditor
+                data={data}
+                setData={setData}
+                isDarkMode={isDarkMode}
+                onExit={() => setStudioMode(false)}
+                addToast={addToast}
+            />
         );
     }
 
@@ -157,7 +92,7 @@ const ResultsList = ({ data, setData, isDarkMode, isStudioMode, setStudioMode, a
 
             <div className="space-y-12">
                 {slides.slice(0, 3).map((s, i) => (
-                    <div key={i} className={`p-8 rounded-3xl border ${isDarkMode ? 'bg-ui-surface-dark/40 border-slate-800' : 'bg-white border-slate-100'} opacity-60 group hover:opacity-100 transition-opacity cursor-pointer`} onClick={() => { setCurrentIndex(i); setStudioMode(true); }}>
+                    <div key={i} className={`p-8 rounded-3xl border ${isDarkMode ? 'bg-ui-surface-dark/40 border-slate-800' : 'bg-white border-slate-100'} opacity-60 group hover:opacity-100 transition-opacity cursor-pointer`} onClick={() => { setStudioMode(true); }}>
                         <div className="flex items-center gap-3 mb-4">
                             <span className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-widest">Slide {s.slide_number} preview</span>
                             <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
