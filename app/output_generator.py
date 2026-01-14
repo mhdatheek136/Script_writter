@@ -55,6 +55,35 @@ class OutputGenerator:
             except OSError:
                 pass
 
+    def _sanitize_xml_text(self, text: Any) -> str:
+        """
+        Ensure text is XML-compatible (python-docx/lxml requirement):
+        - remove NULL bytes
+        - remove disallowed control chars
+        Keep \t, \n, \r.
+        """
+        if text is None:
+            return ""
+        s = str(text)
+
+        # Fast path: if no obvious control chars, return as-is
+        # (still need to remove NULL if present)
+        if "\x00" not in s:
+            # check if any disallowed control chars exist
+            # allow: tab(9), lf(10), cr(13)
+            if not any((ord(ch) < 32 and ch not in ("\t", "\n", "\r")) for ch in s):
+                return s
+
+        cleaned_chars = []
+        for ch in s:
+            code = ord(ch)
+            if ch == "\x00":
+                continue
+            if code < 32 and ch not in ("\t", "\n", "\r"):
+                continue
+            cleaned_chars.append(ch)
+        return "".join(cleaned_chars)
+
     def _validate_slides(self, result: Dict[str, Any]) -> List[Dict[str, Any]]:
         slides = result.get("slides", [])
         if not isinstance(slides, list):
@@ -75,8 +104,8 @@ class OutputGenerator:
             norm.append(
                 {
                     "slide_number": slide_number_int,
-                    "narration_paragraph": str(s.get("narration_paragraph", "") or ""),
-                    "speaker_notes": str(s.get("speaker_notes", "") or ""),
+                    "narration_paragraph": self._sanitize_xml_text(s.get("narration_paragraph", "") or ""),
+                    "speaker_notes": self._sanitize_xml_text(s.get("speaker_notes", "") or ""),
                 }
             )
         return norm
@@ -199,8 +228,11 @@ class OutputGenerator:
                 notes_slide = slide.notes_slide
                 tf = notes_slide.notes_text_frame
 
+                # sanitize text written into notes as well (defensive)
+                narration = self._sanitize_xml_text(narration)
+
                 if mode == "append":
-                    existing = (tf.text or "").strip()
+                    existing = self._sanitize_xml_text((tf.text or "").strip())
                     tf.text = (
                         f"{existing}\n\n{marker}\n{narration}".strip()
                         if existing

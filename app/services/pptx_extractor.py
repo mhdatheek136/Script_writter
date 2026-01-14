@@ -70,7 +70,7 @@ class PPTXExtractor:
 
     def pptx_to_images(self, pptx_path: Path) -> Tuple[List[Path], List[str], List[str]]:
         """
-        Convert PPTX slides to images and extract speaker notes and original text.
+        Convert PPTX slides to images via PDF intermediate and extract speaker notes and original text.
         Returns tuple of (image_paths, speaker_notes_list, original_text_list).
         """
         try:
@@ -88,14 +88,23 @@ class PPTXExtractor:
                 speaker_notes_list.append(self._extract_speaker_notes(slide))
                 original_text_list.append(self._extract_slide_text(slide))
 
-            logger.info("Rendering PPTX to PNG using LibreOffice (soffice) ...")
-            out_dir = self.temp_dir / "rendered_png"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            self.temp_files.append(out_dir)
+            logger.info("Converting PPTX to PDF using LibreOffice (soffice)...")
+            
+            # Create directories
+            pdf_dir = self.temp_dir / "rendered_pdf"
+            pdf_dir.mkdir(parents=True, exist_ok=True)
+            self.temp_files.append(pdf_dir)
+            
+            png_dir = self.temp_dir / "rendered_png"
+            png_dir.mkdir(parents=True, exist_ok=True)
+            self.temp_files.append(png_dir)
 
             soffice_cmd = self._resolve_soffice_cmd()
+            
+            # Step 1: PPTX -> PDF
+            pdf_out = pdf_dir / f"{pptx_path.stem}.pdf"
+            self.temp_files.append(pdf_out)
 
-            # Try direct PPTX -> PNG export first
             subprocess.run(
                 [
                     soffice_cmd,
@@ -105,9 +114,9 @@ class PPTXExtractor:
                     "--nodefault",
                     "--norestore",
                     "--convert-to",
-                    "png:impress_png_Export",
+                    "pdf:impress_pdf_Export",
                     "--outdir",
-                    str(out_dir),
+                    str(pdf_dir),
                     str(pptx_path),
                 ],
                 stdout=subprocess.PIPE,
@@ -115,80 +124,50 @@ class PPTXExtractor:
                 check=True,
             )
 
-            png_files = list(out_dir.glob("*.png"))
+            # Find the generated PDF file
+            pdf_candidates = list(pdf_dir.glob("*.pdf"))
+            if not pdf_candidates:
+                raise Exception("LibreOffice did not produce a PDF file")
+            pdf_out = pdf_candidates[0]
+            self.temp_files.append(pdf_out)
 
+            logger.info(f"PDF created: {pdf_out}")
+            logger.info("Converting PDF to PNG using pdftoppm...")
+
+            # Step 2: PDF -> PNG using pdftoppm
+            pdftoppm_cmd = shutil.which("pdftoppm")
+            if not pdftoppm_cmd:
+                raise FileNotFoundError(
+                    "pdftoppm not found. Install 'poppler-utils' in the runtime image to enable PDF-to-PNG conversion."
+                )
+
+            # Generate PNG files with prefix
+            out_prefix = str(png_dir / "slide")
+            result = subprocess.run(
+                [
+                    pdftoppm_cmd,
+                    "-png",
+                    "-r", "150",  # Lower resolution
+                    "-scale-to-x", "1280",  # Constrain width
+                    "-scale-to-y", "-1",  # Maintain aspect ratio
+                    str(pdf_out),
+                    out_prefix,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+
+            # Get generated PNG files
+            png_files = list(png_dir.glob("*.png"))
+            
             def _slide_sort_key(p: Path):
                 m = re.search(r"(\d+)(?=\D*$)", p.stem)
                 return int(m.group(1)) if m else 10**9
 
             png_files = sorted(png_files, key=_slide_sort_key)
-
-            # If LibreOffice produced only 1 image (or fewer than slides), fallback to PDF -> PNG per page
-            if len(png_files) < total_slides:
-                logger.warning(
-                    f"Direct PNG export produced {len(png_files)} image(s) for {total_slides} slides. "
-                    "Falling back to PPTX -> PDF -> PNG per page."
-                )
-
-                pdftoppm_cmd = shutil.which("pdftoppm")
-                if not pdftoppm_cmd:
-                    raise FileNotFoundError(
-                        "pdftoppm not found. Install 'poppler-utils' in the runtime image to enable PDF-to-PNG conversion."
-                    )
-                
-                pdf_dir = self.temp_dir / "rendered_pdf"
-                pdf_dir.mkdir(parents=True, exist_ok=True)
-                self.temp_files.append(pdf_dir)
-
-                pdf_out = pdf_dir / f"{pptx_path.stem}.pdf"
-                self.temp_files.append(pdf_out)
-
-                # PPTX -> PDF
-                subprocess.run(
-                    [
-                        soffice_cmd,
-                        "--headless",
-                        "--nologo",
-                        "--nolockcheck",
-                        "--nodefault",
-                        "--norestore",
-                        "--convert-to",
-                        "pdf:impress_pdf_Export",
-                        "--outdir",
-                        str(pdf_dir),
-                        str(pptx_path),
-                    ],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=True,
-                )
-
-                if not pdf_out.exists():
-                    pdf_candidates = list(pdf_dir.glob("*.pdf"))
-                    if not pdf_candidates:
-                        raise Exception("LibreOffice did not produce a PDF file for fallback rendering")
-                    pdf_out = pdf_candidates[0]
-                    self.temp_files.append(pdf_out)
-
-                # PDF -> PNG per page
-                out_prefix = str(out_dir / "slide")
-                subprocess.run(
-                    [
-                        pdftoppm_cmd,
-                        "-png",
-                        "-r",
-                        "200",
-                        str(pdf_out),
-                        out_prefix,
-                    ],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=True,
-                )
-
-                png_files = sorted(list(out_dir.glob("*.png")), key=_slide_sort_key)
-
-            # Ensure we have the correct number of images
+            
+            # Take only the number of slides we expect
             if len(png_files) > total_slides:
                 png_files = png_files[:total_slides]
             
