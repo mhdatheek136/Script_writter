@@ -240,7 +240,7 @@ class SlideProcessor:
                 if len(failed_slides) > total_slides_count / 2:  # More than half failed
                     raise Exception(f"Too many slides failed to process: {len(failed_slides)}/{total_slides_count}")
 
-            self.progress_store.update(session_id, "generating_narration", 70, "Generating narration flow...")
+
             logger.info(f"\n✓ Processed {len(slide_results) - len(failed_slides)}/{len(slide_results)} slides successfully\n")
 
             # Step 3: Generate flowing narration
@@ -251,7 +251,13 @@ class SlideProcessor:
                     tone,
                     narration_style=narration_style,
                     dynamic_length=dynamic_length,
-                    custom_instructions=custom_instructions
+                    custom_instructions=custom_instructions,
+                    progress_callback=lambda current, total: self.progress_store.update(
+                        session_id, 
+                        "generating_narration", 
+                        70 + int((current / total) * 15), 
+                        f"Generating narration for slide {current}/{total}..."
+                    )
                 )
 
                 if len(narration_paragraphs) != len(slide_results):

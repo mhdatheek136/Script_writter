@@ -155,6 +155,7 @@ class LLMClient:
         narration_style: str = "Human-like",
         dynamic_length: bool = True,
         custom_instructions: Optional[str] = None,
+        progress_callback: Optional[Any] = None,
     ) -> List[str]:
         """
         Generate narration for all slides using sequential processing.
@@ -170,17 +171,27 @@ class LLMClient:
                 slide_content = slide_info.get("rewritten_content", "")
                 speaker_notes = slide_info.get("speaker_notes", "")
 
-                narration = self._generate_single_slide_narration(
-                    slide_index=i,
-                    total_slides=total_slides,
-                    slide_content=slide_content,
-                    speaker_notes=speaker_notes,
-                    prev_narrations=narrations,
-                    tone=tone,
-                    narration_style=narration_style,
-                    dynamic_length=dynamic_length,
-                    custom_instructions=custom_instructions,
-                )
+                if progress_callback:
+                    try:
+                        progress_callback(i + 1, total_slides)
+                    except Exception as e:
+                        logger.warning(f"Progress callback failed: {e}")
+
+                try:
+                    narration = self._generate_single_slide_narration(
+                        slide_index=i,
+                        total_slides=total_slides,
+                        slide_content=slide_content,
+                        speaker_notes=speaker_notes,
+                        prev_narrations=narrations,
+                        tone=tone,
+                        narration_style=narration_style,
+                        dynamic_length=dynamic_length,
+                        custom_instructions=custom_instructions,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to generate narration for slide {i+1}: {e}")
+                    narration = slide_content  # Fallback to rewritten content
 
                 narrations.append(narration)
                 logger.info(f"Slide {i+1} narration ({len(narration.split())} words): {narration[:100]}...")
@@ -351,7 +362,7 @@ class LLMClient:
                 tone=tone
             )
             
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(prompt, request_options={"timeout": 600})
             response_text = self._extract_response_text(response).strip()
             
             parsed = safe_json_loads(response_text)
@@ -391,7 +402,8 @@ class LLMClient:
                 slides_input_json=json.dumps(slides_input, indent=2)
             )
 
-            response = self.model.generate_content(prompt)
+            # Increase timeout for global rewrite as it processes all slides
+            response = self.model.generate_content(prompt, request_options={"timeout": 600})
             response_text = self._extract_response_text(response)
             
             rewritten_data = safe_json_loads(response_text)
