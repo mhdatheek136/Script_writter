@@ -31,6 +31,34 @@ const StudioEditor = ({
     }
   }, [currentIndex]);
 
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger if user is typing in a textarea or input
+      if (['TEXTAREA', 'INPUT'].includes(e.target.tagName)) return;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          setCurrentIndex((prev) => Math.max(0, prev - 1));
+          break;
+        case 'ArrowRight':
+          setCurrentIndex((prev) => Math.min(slides.length - 1, prev + 1));
+          break;
+        case 'Home':
+          setCurrentIndex(0);
+          break;
+        case 'End':
+          setCurrentIndex(slides.length - 1);
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [slides.length]);
+
   const currentSlide = slides[currentIndex];
 
   const handleUpdateSlide = (newNarration) => {
