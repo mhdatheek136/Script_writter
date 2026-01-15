@@ -142,10 +142,15 @@ class LLMClient:
         total = content_length + notes_length
         return "High" if total > 150 else "Medium" if total > 50 else "Low"
 
-    def _length_target_hint(self, dynamic_length: bool, complexity: str) -> str:
+    def _length_target_hint(self, dynamic_length: bool, complexity: str, min_words: Optional[int] = None, max_words: Optional[int] = None) -> str:
         """Provide a per-slide word target hint without changing global behavior."""
         if not dynamic_length:
-            return "Aim for 100-150 words."
+            target_min = min_words if min_words is not None else 100
+            target_max = max_words if max_words is not None else 150
+            logger.info(f"Using FIXED LENGTH mode: Aiming for {target_min}-{target_max} words.")
+            return f"Aim for {target_min}-{target_max} words."
+        
+        logger.info(f"Using DYNAMIC LENGTH mode (Complexity: {complexity})")
         if complexity == "Low":
             return "Aim for 50-100 words."
         if complexity == "Medium":
@@ -158,6 +163,8 @@ class LLMClient:
         tone: str,
         narration_style: str = "Human-like",
         dynamic_length: bool = True,
+        min_words: Optional[int] = None,
+        max_words: Optional[int] = None,
         custom_instructions: Optional[str] = None,
         progress_callback: Optional[Any] = None,
     ) -> List[str]:
@@ -190,7 +197,10 @@ class LLMClient:
                         prev_narrations=narrations,
                         tone=tone,
                         narration_style=narration_style,
+
                         dynamic_length=dynamic_length,
+                        min_words=min_words,
+                        max_words=max_words,
                         custom_instructions=custom_instructions,
                     )
                 except Exception as e:
@@ -216,7 +226,10 @@ class LLMClient:
         prev_narrations: List[str],
         tone: str,
         narration_style: str,
+
         dynamic_length: bool,
+        min_words: Optional[int] = None,
+        max_words: Optional[int] = None,
         custom_instructions: Optional[str] = None,
     ) -> str:
         """
@@ -226,10 +239,13 @@ class LLMClient:
         slide_number = slide_index + 1
 
         style_instructions = get_style_instructions(narration_style)
-        length_instructions = get_length_instructions(dynamic_length)
+        length_instructions = get_length_instructions(
+            dynamic_length, 
+            min_words if min_words is not None else 100, 
+            max_words if max_words is not None else 150
+        )
 
         complexity = self._compute_complexity_label(slide_content, speaker_notes)
-        per_slide_hint = self._length_target_hint(dynamic_length, complexity)
 
         # Use all available previous narrations (up to 5)
         prev_narrations = (prev_narrations or [])[-5:]

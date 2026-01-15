@@ -53,7 +53,7 @@ Write in a polished, business-appropriate style:
     return styles.get(narration_style, styles["Human-like"])
 
 
-def get_length_instructions(dynamic_length: bool) -> str:
+def get_length_instructions(dynamic_length: bool, min_words: int = 100, max_words: int = 150) -> str:
     """Get length-specific instructions."""
     if dynamic_length:
         return """**Dynamic Length**: Adjust the narration length based on slide content complexity.
@@ -66,11 +66,15 @@ def get_length_instructions(dynamic_length: bool) -> str:
 - Never exceed 400 words under any circumstances
 """
     else:
-        return """**Fixed Length**: Keep narration consistent across slides:
-- Aim for 100-150 words per slide
-- Maintain similar length for all slides regardless of content complexity
-- Break into paragraphs only if exceeding 200 words
-- Use "\\n\\n" (double newline) for paragraph breaks when needed"""
+        return f"""**Fixed Length**: STRICTLY follow these length constraints:
+- **MINIMUM WORDS**: {min_words}
+- **MAXIMUM WORDS**: {max_words}
+- Keep narration consistent across slides.
+- You MUST write between {min_words} and {max_words} words. 
+- If the content is short, expand on it to reach the minimum.
+- If the content is long, summarize it to stay under the maximum.
+- Break into paragraphs only if exceeding 200 words.
+- Use "\\n\\n" (double newline) for paragraph breaks when needed."""
 
 
 SLIDE_CONTENT_REWRITE_PROMPT = """You are an expert presentation script writer. Analyze this slide image and create a clear, engaging narration script that explains the content on the slide.

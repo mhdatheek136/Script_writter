@@ -251,6 +251,8 @@ class SlideProcessor:
                     tone,
                     narration_style=narration_style,
                     dynamic_length=dynamic_length,
+                    min_words=min_words,
+                    max_words=max_words_fixed,
                     custom_instructions=custom_instructions,
                     progress_callback=lambda current, total: self.progress_store.update(
                         session_id, 
