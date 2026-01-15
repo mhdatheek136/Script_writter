@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
-const SlideBlock = ({ slide, tone, onUpdate, isDarkMode, addToast, isStudioLayout = false }) => {
+const SlideBlock = ({ slide, tone, narrationStyle, onUpdate, isDarkMode, addToast, isStudioLayout = false }) => {
   // AI editing
   const [isAiEditing, setIsAiEditing] = useState(false);
   const [aiRequest, setAiRequest] = useState('');
@@ -89,7 +89,8 @@ const SlideBlock = ({ slide, tone, onUpdate, isDarkMode, addToast, isStudioLayou
           current_text: slide.narration_paragraph,
           instruction: aiRequest,
           slide_context: `Slide ${slide.slide_number}: ${slide.original_content}`,
-          tone: tone
+          tone: tone,
+          style: narrationStyle || 'Human-like'
         }),
       });
       if (!response.ok) throw new Error('Failed to refine');

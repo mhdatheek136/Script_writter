@@ -1,4 +1,5 @@
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import logging
 import json
 from pathlib import Path
@@ -17,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 class LLMClient:
     def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model_name)
+        self.client = genai.Client(api_key=api_key)
+        self.model_name = model_name
     
     def _extract_response_text(self, response) -> str:
         """
@@ -97,7 +98,10 @@ class LLMClient:
 
             # Call Gemini with image (PIL Image object)
             logger.info(f"Calling Gemini API for slide {slide_number}...")
-            response = self.model.generate_content([prompt, image])
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=[prompt, image]
+            )
 
             # Parse JSON response - safely extract text
             response_text = self._extract_response_text(response).strip()
@@ -266,7 +270,10 @@ class LLMClient:
         )
 
         logger.info(f"Calling Gemini API for narration (slide {slide_number}/{total_slides})...")
-        response = self.model.generate_content(prompt)
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt
+        )
 
         response_text = self._extract_response_text(response).strip()
         parsed = safe_json_loads(response_text)
@@ -282,7 +289,7 @@ class LLMClient:
 
         return narration
 
-    def refine_narrations_flow(self, narrations_with_indices: List[Dict[str, Any]], tone: str) -> List[str]:
+    def refine_narrations_flow(self, narrations_with_indices: List[Dict[str, Any]], tone: str, style: str) -> List[str]:
         """
         Refine the flow of narrations across all slides.
         """
@@ -299,10 +306,14 @@ class LLMClient:
             
             prompt = NARRATION_REFINEMENT_PROMPT.format(
                 tone=tone,
+                style=style,
                 slides_input_json=json.dumps(slides_input, indent=2)
             )
 
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt
+            )
             response_text = self._extract_response_text(response)
             
             refined_data = safe_json_loads(response_text)
@@ -334,7 +345,8 @@ class LLMClient:
         rewritten_content: str,
         speaker_notes: str,
         user_request: str,
-        tone: str
+        tone: str,
+        style: str
     ) -> str:
         """
         Rewrite a single narration based on user's custom request.
@@ -359,10 +371,14 @@ class LLMClient:
                 rewritten_content=rewritten_content,
                 speaker_notes=speaker_notes,
                 user_request=user_request,
-                tone=tone
+                tone=tone,
+                style=style
             )
             
-            response = self.model.generate_content(prompt, request_options={"timeout": 600})
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt
+            )
             response_text = self._extract_response_text(response).strip()
             
             parsed = safe_json_loads(response_text)
@@ -379,7 +395,7 @@ class LLMClient:
             # Return original on error
             return current_narration
 
-    def perform_global_rewrite(self, slide_data: List[Dict[str, Any]], user_request: str, tone: str) -> List[Dict[str, Any]]:
+    def perform_global_rewrite(self, slide_data: List[Dict[str, Any]], user_request: str, tone: str, style: str) -> List[Dict[str, Any]]:
         """
         Rewrite all narrations based on a global user request.
         """
@@ -398,12 +414,16 @@ class LLMClient:
             
             prompt = GLOBAL_REWRITE_PROMPT.format(
                 tone=tone,
+                style=style,
                 user_request=user_request,
                 slides_input_json=json.dumps(slides_input, indent=2)
             )
 
             # Increase timeout for global rewrite as it processes all slides
-            response = self.model.generate_content(prompt, request_options={"timeout": 600})
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt
+            )
             response_text = self._extract_response_text(response)
             
             rewritten_data = safe_json_loads(response_text)

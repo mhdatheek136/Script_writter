@@ -45,6 +45,7 @@ const ResultsList = ({ data, setData, isDarkMode, isStudioMode, setStudioMode, a
                 isDarkMode={isDarkMode}
                 onExit={() => setStudioMode(false)}
                 addToast={addToast}
+                narrationStyle={data.narration_style}
             />
         );
     }
@@ -54,6 +55,7 @@ const ResultsList = ({ data, setData, isDarkMode, isStudioMode, setStudioMode, a
             <GlobalRefinement
                 slides={data.slides}
                 tone={data.tone}
+                narrationStyle={data.narration_style}
                 isDarkMode={isDarkMode}
                 onUpdate={(newSlides) => setData({ ...data, slides: newSlides })}
             />

@@ -6,7 +6,9 @@ const StudioEditor = ({
   setData,
   isDarkMode,
   onExit,
-  addToast
+
+  addToast,
+  narrationStyle
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [slides, setSlides] = useState(data.slides || []);
@@ -161,6 +163,7 @@ const StudioEditor = ({
           <SlideBlock
             slide={currentSlide}
             tone={data.tone}
+            narrationStyle={narrationStyle}
             isDarkMode={isDarkMode}
             onUpdate={handleUpdateSlide}
             addToast={addToast}

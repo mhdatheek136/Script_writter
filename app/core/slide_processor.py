@@ -288,7 +288,7 @@ class SlideProcessor:
                             })
                     
                     if narrations_to_refine:
-                        narration_paragraphs = self.llm_client.refine_narrations_flow(narrations_to_refine, tone)
+                        narration_paragraphs = self.llm_client.refine_narrations_flow(narrations_to_refine, tone, narration_style)
                         logger.info(f"✓ Refined {len(narration_paragraphs)} narration paragraphs")
                 except Exception as e:
                     logger.error(f"Failed to polish narration: {str(e)}")
@@ -319,6 +319,7 @@ class SlideProcessor:
                 "total_slides": len(final_results),
                 "processed_successfully": len(final_results) - len(failed_slides),
                 "failed_slides": failed_slides,
+                "narration_style": narration_style,
                 "slides": final_results
             }
 

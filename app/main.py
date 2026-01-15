@@ -124,7 +124,8 @@ async def rewrite_narration(
     rewritten_content: str = Form(...),
     speaker_notes: str = Form(""),
     user_request: str = Form(...),
-    tone: str = Form("Professional")
+    tone: str = Form("Professional"),
+    style: str = Form("Human-like")
 ):
     """
     Rewrite a single narration based on user request.
@@ -146,7 +147,9 @@ async def rewrite_narration(
             rewritten_content=rewritten_content,
             speaker_notes=speaker_notes,
             user_request=user_request,
-            tone=tone
+
+            tone=tone,
+            style=style
         )
         
         logger.info(f"Rewrite successful for slide {slide_number}")
@@ -166,7 +169,9 @@ class RefineRequest(BaseModel):
     current_text: str
     instruction: str
     slide_context: str
+
     tone: str = "Professional"
+    style: str = "Human-like"
 
 
 @app.post("/api/refine-narration")
@@ -189,7 +194,9 @@ async def refine_narration(request: RefineRequest):
             rewritten_content=request.slide_context,
             speaker_notes="",
             user_request=request.instruction,
-            tone=request.tone
+
+            tone=request.tone,
+            style=request.style
         )
         
         return JSONResponse({
@@ -206,7 +213,8 @@ async def refine_narration(request: RefineRequest):
 async def global_rewrite(
     user_request: str = Form(...),
     slides_json: str = Form(...),
-    tone: str = Form("Professional")
+    tone: str = Form("Professional"),
+    style: str = Form("Human-like")
 ):
     """
     Rewrite all narrations based on a global user request.
@@ -227,7 +235,9 @@ async def global_rewrite(
         updated_slides = llm_client.perform_global_rewrite(
             slide_data=slides,
             user_request=user_request,
-            tone=tone
+
+            tone=tone,
+            style=style
         )
         
         return JSONResponse({

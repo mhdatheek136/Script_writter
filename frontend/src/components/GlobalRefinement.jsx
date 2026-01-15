@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const GlobalRefinement = ({ slides, tone, onUpdate, isDarkMode }) => {
+const GlobalRefinement = ({ slides, tone, narrationStyle, onUpdate, isDarkMode }) => {
     const [request, setRequest] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -12,6 +12,7 @@ const GlobalRefinement = ({ slides, tone, onUpdate, isDarkMode }) => {
         formData.append('user_request', request);
         formData.append('slides_json', JSON.stringify(slides));
         formData.append('tone', tone || 'Professional');
+        formData.append('style', narrationStyle || 'Human-like');
 
         try {
             const response = await fetch('/api/global-rewrite', { method: 'POST', body: formData });

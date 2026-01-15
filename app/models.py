@@ -61,5 +61,6 @@ class ProcessResponse(BaseModel):
     slides: List[SlideOutput]
     session_id: Optional[str] = None
     base_name: Optional[str] = None
+    narration_style: Optional[str] = None
     processing_summary: Optional[Dict[str, Any]] = None
     error: Optional[str] = None

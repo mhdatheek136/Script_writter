@@ -152,10 +152,11 @@ Your task is to REWRITE the narrations to improve the flow, coherence, and "spea
 
 CRITICAL RULES:
 1. Keep the same TONE: {tone}
-2. DO NOT change the core meaning or content. Just smooth out the wording.
-3. Ensure logical transitions between slides where appropriate.
-4. formatting should be natural speech.
-5. RETURN DATA MUST BE A JSON ARRAY of objects.
+2. Maintain the STYLE: {style}.
+3. DO NOT change the core meaning or content. Just smooth out the wording.
+4. Ensure logical transitions between slides where appropriate.
+5. formatting should be natural speech.
+6. RETURN DATA MUST BE A JSON ARRAY of objects.
 
 Input Data:
 {slides_input_json}
@@ -182,6 +183,7 @@ You have been given:
 Your task is to rewrite the narration according to the user's request while maintaining:
 - The core information from the rewritten content and speaker notes
 - The specified tone: {tone}
+- The specified style: {style}
 - Natural, speakable language
 - Appropriate length (unless user requests otherwise)
 
@@ -221,8 +223,9 @@ CRITICAL RULES:
 1. Follow the USER REQUEST strictly for the rewrite.
 2. Maintain the same slide order.
 3. Maintain the TONE: {tone} unless the user explicitly asks to change it.
-4. Keep the rewritten narration focused on the same core points as the current one, but change the delivery/style according to the user request.
-5. RETURN DATA MUST BE A JSON ARRAY of objects.
+4. Maintain the STYLE: {style} unless the user explicitly asks to change it.
+5. Keep the rewritten narration focused on the same core points as the current one, but change the delivery/style according to the user request.
+6. RETURN DATA MUST BE A JSON ARRAY of objects.
 
 USER NEW REQUEST:
 {user_request}
