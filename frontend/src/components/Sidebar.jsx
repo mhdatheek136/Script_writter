@@ -19,8 +19,8 @@ const Sidebar = ({
     dynamic_length: true,
     min_words: 50,
     max_words_fixed: 150,
-    use_contextual_notes: true,
-    enable_ai_polishing: true,
+    include_speaker_notes: true,
+    enable_polishing: true,
     custom_instructions: '',
   });
 
@@ -405,13 +405,13 @@ const Sidebar = ({
             <label className="flex items-center group cursor-pointer relative">
               <input
                 type="checkbox"
-                name="use_contextual_notes"
-                checked={formData.use_contextual_notes}
+                name="include_speaker_notes"
+                checked={formData.include_speaker_notes}
                 onChange={handleInputChange}
                 className="hidden"
               />
-              <div className={`w-10 h-6 rounded-full relative transition-all ${formData.use_contextual_notes ? 'bg-soft-teal' : 'bg-slate-300 dark:bg-slate-800'}`}>
-                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${formData.use_contextual_notes ? 'translate-x-4' : ''}`} />
+              <div className={`w-10 h-6 rounded-full relative transition-all ${formData.include_speaker_notes ? 'bg-soft-teal' : 'bg-slate-300 dark:bg-slate-800'}`}>
+                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${formData.include_speaker_notes ? 'translate-x-4' : ''}`} />
               </div>
               <div className="ml-3 w-full">
                 <LabelWithTooltip label="Contextual Notes" tooltipKey="contextual" />
@@ -421,13 +421,13 @@ const Sidebar = ({
             <label className="flex items-center group cursor-pointer relative">
               <input
                 type="checkbox"
-                name="enable_ai_polishing"
-                checked={formData.enable_ai_polishing}
+                name="enable_polishing"
+                checked={formData.enable_polishing}
                 onChange={handleInputChange}
                 className="hidden"
               />
-              <div className={`w-10 h-6 rounded-full relative transition-all ${formData.enable_ai_polishing ? 'bg-soft-teal' : 'bg-slate-300 dark:bg-slate-800'}`}>
-                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${formData.enable_ai_polishing ? 'translate-x-4' : ''}`} />
+              <div className={`w-10 h-6 rounded-full relative transition-all ${formData.enable_polishing ? 'bg-soft-teal' : 'bg-slate-300 dark:bg-slate-800'}`}>
+                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${formData.enable_polishing ? 'translate-x-4' : ''}`} />
               </div>
               <div className="ml-3 w-full">
                 <LabelWithTooltip label="AI Polishing" tooltipKey="polishing" />

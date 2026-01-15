@@ -117,52 +117,7 @@ async def health():
     return {"status": "healthy", "model": GEMINI_MODEL}
 
 
-@app.post("/api/rewrite-narration")
-async def rewrite_narration(
-    slide_number: int = Form(...),
-    current_narration: str = Form(...),
-    rewritten_content: str = Form(...),
-    speaker_notes: str = Form(""),
-    user_request: str = Form(...),
-    tone: str = Form("Professional"),
-    style: str = Form("Human-like")
-):
-    """
-    Rewrite a single narration based on user request.
-    """
-    try:
-        logger.info(f"=== NARRATION REWRITE REQUEST ===")
-        logger.info(f"Slide: {slide_number}")
-        logger.info(f"User request: {user_request}")
-        logger.info(f"Tone: {tone}")
-        
-        if not user_request.strip():
-            raise HTTPException(status_code=400, detail="User request cannot be empty")
-        
-        from app.services.llm_client import LLMClient
-        llm_client = LLMClient(GEMINI_API_KEY, GEMINI_MODEL)
-        
-        new_narration = llm_client.rewrite_narration(
-            current_narration=current_narration,
-            rewritten_content=rewritten_content,
-            speaker_notes=speaker_notes,
-            user_request=user_request,
 
-            tone=tone,
-            style=style
-        )
-        
-        logger.info(f"Rewrite successful for slide {slide_number}")
-        
-        return JSONResponse({
-            "success": True,
-            "slide_number": slide_number,
-            "rewritten_narration": new_narration
-        })
-        
-    except Exception as e:
-        logger.error(f"Rewrite failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to rewrite narration: {str(e)}")
 
 
 class RefineRequest(BaseModel):
