@@ -1,106 +1,107 @@
-# Slide-to-Narration Rewriter
+# Script Writer: AI-Powered Slide Narration
 
-A lightweight internal web tool that rewrites PowerPoint presentations using Google's Gemini 2.5 Flash API. The tool processes each slide, generates improved content, extracts existing speaker notes, then creates a smooth, flowing narration script.
+**Script Writer** is a sophisticated, industrial-minimalist web application designed to transform PowerPoint presentations into polished, flowing narration scripts. Using the power of **Google Gemini 2.5 Flash**, it extracts slide content and speaker notes to generate context-aware narrations that feel natural and engaging.
 
-## Features
+![App Preview](https://via.placeholder.com/800x450.png?text=Script+Writer+Industrial+UI)
 
-- **PPTX Processing**: Upload and process PowerPoint files
-- **AI-Powered Rewriting**: Uses Gemini 2.5 Flash to improve slide content
-- **Speaker Notes Extraction**: Extracts existing speaker notes from PowerPoint slides
-- **Flowing Narration**: Generates cohesive narration paragraphs that flow across slides
-- **Customizable**: Adjust tone, audience level, word count, and notes length
-- **Stateless**: No permanent storage - all files are deleted after processing
-- **Dockerized**: Easy deployment with Docker and docker-compose
+---
 
-## Quick Start
+## Key Features
+
+- **Project Management**: Organize your work into persistent projects with names and descriptions.
+- **Dual-Pass AI Processing**:
+  - **Content Rewriting**: Optimizes slide text for clarity and impact.
+  - **Fluid Narration**: Generates a continuous script that flows naturally from one slide to the next.
+- **Focused Refinement**:
+  - **Studio Editor**: A dedicated full-screen mode for fine-tuning individual slides.
+  - **AI Refinement**: Ask the AI to rewrite specific blocks with custom instructions (e.g., "Make it more punchy", "Explain like I'm 5").
+  - **Global Rewriting**: Update the tone or style of the entire presentation in one click.
+- **S3-Backed Storage**: All presentations and extracted slide images are stored securely in S3 (or MinIO), ensuring data persistence and easy scaling.
+- **Multi-Format Export**: Download your final results as **PDF**, **DOCX**, **TXT**, **JSON**, or even a **new PPTX** with the narrations injected back into the speaker notes.
+- **Secure Multi-Tenancy**:
+  - **User Accounts**: Personal workspaces where users can only see their own projects.
+  - **Admin Panel**: Manage users, reset passwords, and oversee system health.
+- **Industrial Aesthetic**: A premium, responsive UI featuring Dark/Light modes with smooth transitions.
+
+---
+
+## Tech Stack
+
+- **Backend**: [FastAPI](https://fastapi.tiangolo.com/) (Python 3.9+)
+- **Frontend**: [React](https://reactjs.org/) + [TailwindCSS](https://tailwindcss.com/) + [Vite](https://vitejs.dev/)
+- **AI Engine**: [Google Gemini 2.5 Flash](https://ai.google.dev/)
+- **Database**: SQLite with [SQLAlchemy](https://www.sqlalchemy.org/)
+- **Storage**: [AWS S3](https://aws.amazon.com/s3/) / [MinIO](https://min.io/)
+- **Deployment**: [Docker](https://www.docker.com/) & Docker Compose
+
+---
+
+## Installation and Setup
+
+The easiest way to run Script Writer is using Docker.
 
 ### Prerequisites
 
 - Docker and Docker Compose
-- Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+- A [Google Gemini API Key](https://aistudio.google.com/app/apikey)
+- (Optional) AWS S3 Credentials or a local MinIO setup
 
-### Setup
+### Quick Start
 
-1. Clone or download this repository
-
-2. Create a `.env` file from the example:
+1. **Clone the repository**:
    ```bash
-   cp .env.example .env
+   git clone https://github.com/mhdatheek136/Script_writter.git
+   cd Script_writter
    ```
 
-3. Edit `.env` and add your Gemini API key:
-   ```
-   GEMINI_API_KEY=your_actual_api_key_here
+2. **Configure Environment**:
+   Create a `.env` file in the root directory (use `.env.example` as a template):
+   ```bash
+   # Core
+   GEMINI_API_KEY=your_gemini_key
+   JWT_SECRET_KEY=your_random_secret_string
+
+   # Storage (S3/MinIO)
+   S3_BUCKET_NAME=your_bucket
+   S3_ACCESS_KEY=your_key
+   S3_SECRET_KEY=your_secret
+   S3_ENDPOINT=http://minio:9000 # For local Minio
    ```
 
-4. Build and run with Docker Compose:
+3. **Run with Docker**:
    ```bash
    docker-compose up --build
    ```
 
-5. Open your browser to `http://localhost:8000`
+4. **Access the App**:
+   - **Frontend**: [http://localhost:8000](http://localhost:8000)
+   - **API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+   - **Default Admin**: `admin@example.com` / `changeme123` (Change this immediately!)
 
-## Usage
-
-1. **Upload**: Select a `.pptx` file from your computer
-2. **Configure**: Set your preferences:
-   - Target tone (Professional, Friendly, Sales, Technical)
-   - Audience level (General, Executive, Technical)
-   - Max words per slide (20-200)
-   - Notes length (Short, Medium, Detailed)
-3. **Process**: Click "Process Presentation" and wait for results
-4. **Review**: View rewritten content, speaker notes, and narration for each slide
-5. **Export**: Copy individual slides or all results, or download as JSON
-
-## API Endpoints
-
-- `GET /` - Main UI
-- `POST /api/process` - Process a PowerPoint file
-- `GET /health` - Health check endpoint
-
-## Configuration
-
-Environment variables (set in `.env`):
-
-- `GEMINI_API_KEY` (required) - Your Gemini API key
-- `GEMINI_MODEL` (optional) - Model name, default: `gemini-2.5-flash`
-- `MAX_FILE_SIZE_MB` (optional) - Maximum file size in MB, default: 50
-- `MAX_SLIDES` (optional) - Maximum number of slides, default: 30
+---
 
 ## Architecture
 
-- **Backend**: FastAPI with async processing
-- **Frontend**: Vanilla HTML/CSS/JavaScript
-- **AI**: Google Gemini 2.5 Flash API
-- **Image Processing**: Pillow for slide-to-image conversion
-- **PPTX Parsing**: python-pptx library
-
-## Processing Pipeline
-
-1. **Upload & Validation**: Validates file type and size
-2. **Slide Conversion**: Converts each slide to an image representation and extracts speaker notes from PPTX
-3. **First Gemini Pass**: For each slide, generates rewritten slide content (speaker notes are extracted from PPTX, not generated)
-4. **Second Gemini Pass**: Generates flowing narration paragraphs across all slides using rewritten content and extracted speaker notes
-5. **Response & Cleanup**: Returns results and deletes all temporary files
-
-## Limitations (MVP)
-
-- Slide-to-image conversion uses a text-based approach (for production, consider using LibreOffice headless or python-pptx-render)
-- Sequential processing (parallel processing can be added later)
-- Maximum 30 slides by default
-- Maximum 50MB file size by default
-
-## Development
-
-To run without Docker:
-
-```bash
-pip install -r requirements.txt
-export GEMINI_API_KEY=your_key_here
-uvicorn app.main:app --reload
+```mermaid
+graph TD
+    A[React Frontend] -->|Auth/API| B[FastAPI Backend]
+    B -->|Metadata| C[(SQLite DB)]
+    B -->|Files/Images| D[S3 / MinIO]
+    B -->|Processing| E[Slide Processor]
+    E -->|AI Analysis| F[Gemini API]
+    E -->|Extraction| G[python-pptx / Pillow]
 ```
+
+- **/app**: Backend API source code, routers, and services.
+- **/frontend**: React application source code and building logic.
+- **/data**: Persistent SQLite database storage.
+
+---
 
 ## License
 
-Internal tool - use as needed.
+This project is an internal tool. All rights reserved.
 
+---
+
+*Built for rapid content creation.*
