@@ -53,14 +53,11 @@ async def list_projects(
 ):
     """
     List all projects for the current user.
-    Admins can see all projects.
+    Everyone only sees their own projects.
     """
-    if current_user.role == UserRole.ADMIN:
-        projects = db.query(Project).order_by(Project.updated_at.desc()).all()
-    else:
-        projects = db.query(Project).filter(
-            Project.user_id == current_user.id
-        ).order_by(Project.updated_at.desc()).all()
+    projects = db.query(Project).filter(
+        Project.user_id == current_user.id
+    ).order_by(Project.updated_at.desc()).all()
     
     return [
         ProjectResponse(
@@ -128,7 +125,7 @@ async def get_project(
         )
     
     # Check access
-    if current_user.role != UserRole.ADMIN and project.user_id != current_user.id:
+    if project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -190,7 +187,7 @@ async def update_project(
         )
     
     # Check access
-    if current_user.role != UserRole.ADMIN and project.user_id != current_user.id:
+    if project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -236,7 +233,7 @@ async def delete_project(
         )
     
     # Check access
-    if current_user.role != UserRole.ADMIN and project.user_id != current_user.id:
+    if project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -276,7 +273,7 @@ async def get_output(
         )
     
     # Check access
-    if current_user.role != UserRole.ADMIN and project.user_id != current_user.id:
+    if project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -323,7 +320,7 @@ async def approve_output(
         )
     
     # Check access
-    if current_user.role != UserRole.ADMIN and project.user_id != current_user.id:
+    if project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"

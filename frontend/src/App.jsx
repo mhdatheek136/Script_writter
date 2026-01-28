@@ -6,8 +6,10 @@ import Login from './components/Login';
 import AdminPanel from './components/AdminPanel';
 import ProjectDashboard from './components/ProjectDashboard';
 import { isAuthenticated, isAdmin, getUser, logout as authLogout, authFetch } from './services/auth';
+import CreateProjectModal from './components/CreateProjectModal';
 
-const STORAGE_KEY = 'slide_narration_results';
+const API_BASE = '';
+const STORAGE_KEY = 'script_writer_project';
 const THEME_KEY = 'ui_theme';
 const SIDEBAR_WIDTH_KEY = 'sidebar_width';
 
@@ -248,6 +250,7 @@ function App() {
     const [error, setError] = useState(null);
     const [showResetModal, setShowResetModal] = useState(false);
     const [isStudioMode, setIsStudioMode] = useState(false);
+    const [showCreateModal, setShowCreateModal] = useState(false);
     const [toasts, setToasts] = useState([]);
 
     const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -263,16 +266,46 @@ function App() {
 
     // Load results when project changes
     useEffect(() => {
-        if (currentProject?.id) {
+        const loadProjectResults = async () => {
+            if (!currentProject?.id) return;
+
             const projectKey = `${STORAGE_KEY}_${currentProject.id}`;
+
+            // 1. Try to fetch latest output from server (Source of Truth)
+            if (currentProject.outputs_count > 0 && currentProject.outputs && currentProject.outputs.length > 0) {
+                try {
+                    const latestOutputMeta = currentProject.outputs[0];
+                    const response = await authFetch(`/api/projects/${currentProject.id}/outputs/${latestOutputMeta.id}`);
+
+                    if (response.ok) {
+                        const outputData = await response.json();
+                        // outputData.slides_data is the full result object { slides: [...], ... }
+                        const resultToSet = outputData.slides_data;
+
+                        setCurrentResults(resultToSet);
+                        localStorage.setItem(projectKey, JSON.stringify(resultToSet));
+                        return;
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch project outputs", e);
+                }
+            }
+
+            // 2. Fallback to Local Cache 
             const saved = localStorage.getItem(projectKey);
-            if (saved) {
+
+            if (currentProject.outputs_count === 0 && currentProject.files_count === 0) {
+                localStorage.removeItem(projectKey);
+                setCurrentResults(null);
+            } else if (saved) {
                 try { setCurrentResults(JSON.parse(saved)); } catch (e) { localStorage.removeItem(projectKey); }
             } else {
                 setCurrentResults(null);
             }
-        }
-    }, [currentProject?.id]);
+        };
+
+        loadProjectResults();
+    }, [currentProject]);
 
     // Save results when they change
     useEffect(() => {
@@ -301,6 +334,50 @@ function App() {
         setToasts(prev => prev.filter(t => t.id !== id));
     };
 
+    const handleCreateProject = async (name, desc) => {
+        try {
+            const response = await authFetch('/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description: desc })
+            });
+
+            if (!response.ok) throw new Error('Failed to create project');
+
+            const newProject = await response.json();
+            setCurrentResults(null); // Clear previous project results
+            setCurrentProject(newProject);
+            setShowCreateModal(false);
+            addToast('Project created successfully');
+            return newProject;
+        } catch (err) {
+            setError(err.message);
+            throw err;
+        }
+    };
+
+    const handleRenameProject = async (projectId, newName) => {
+        try {
+            const response = await authFetch(`/api/projects/${projectId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName })
+            });
+
+            if (!response.ok) throw new Error('Failed to rename project');
+
+            const updatedProject = await response.json();
+            if (currentProject?.id === projectId) {
+                setCurrentProject(updatedProject);
+            }
+            addToast('Project renamed successfully');
+            return updatedProject;
+        } catch (err) {
+            addToast(err.message, 'error');
+            throw err;
+        }
+    };
+
     const startResizing = useCallback(() => setIsResizing(true), []);
     const stopResizing = useCallback(() => setIsResizing(false), []);
     const resize = useCallback((e) => {
@@ -319,11 +396,24 @@ function App() {
         };
     }, [resize, stopResizing]);
 
-    const handleProcessComplete = (data) => {
+    const handleProcessComplete = async (data) => {
         setCurrentResults(data);
         setError(null);
         addToast('Presentation processed successfully');
         setProcessingStatus({ active: false, percentage: 0, message: '', sessionId: null });
+
+        // Refresh project data to update counts (triggers Sidebar lock)
+        if (currentProject?.id) {
+            try {
+                const response = await authFetch(`/api/projects/${currentProject.id}`);
+                if (response.ok) {
+                    const updatedProject = await response.json();
+                    setCurrentProject(updatedProject);
+                }
+            } catch (e) {
+                console.error("Failed to refresh project", e);
+            }
+        }
     };
 
     const performReset = () => {
@@ -457,10 +547,12 @@ function App() {
                         className={`relative flex-shrink-0 z-[100] transition-all duration-300 ease-in-out md:static fixed inset-y-0 left-0 ${isSidebarOpenMobile ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
                     >
                         <Sidebar
+                            currentProjectId={currentProject.id}
                             project={currentProject}
                             isCollapsed={isSidebarCollapsed}
                             setCollapsed={setIsSidebarCollapsed}
-                            onReset={() => currentResults ? setShowResetModal(true) : performReset()}
+                            onReset={() => setShowCreateModal(true)}
+                            onRenameProject={handleRenameProject}
                             processingStatus={processingStatus}
                             setProcessingStatus={setProcessingStatus}
                             onProcessComplete={handleProcessComplete}
@@ -468,7 +560,6 @@ function App() {
                             isDarkMode={isDarkMode}
                             toggleTheme={() => setIsDarkMode(!isDarkMode)}
                             addToast={addToast}
-                            currentProjectId={currentProject?.id}
                         />
 
                         {!isSidebarCollapsed && (
@@ -606,6 +697,12 @@ function App() {
                     addToast={addToast}
                 />
             )}
+
+            <CreateProjectModal
+                isOpen={showCreateModal}
+                onClose={() => setShowCreateModal(false)}
+                onCreate={handleCreateProject}
+            />
         </div>
     );
 }

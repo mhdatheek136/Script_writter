@@ -9,7 +9,11 @@ from typing import Optional, List, Dict, Any, Union
 from contextlib import asynccontextmanager
 
 from pydantic import BaseModel
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks, Depends
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.auth.dependencies import get_current_user
+from app.models.db_models import User
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -170,24 +174,24 @@ def run_processing_background(
                     
                     # Upload original file to S3 immediately
                     s3 = S3StorageService()
-                    s3_key = s3.upload_file(
-                        file_path, 
-                        project.user_id, 
-                        project.id, 
-                        "uploads",
-                        file_path.name
-                    )
+                    target_key = s3.get_s3_key(str(project.user_id), project.id, "uploads", file_path.name)
+                    
+                    with open(file_path, "rb") as f:
+                        if s3.upload_file(f.read(), target_key):
+                            s3_key = target_key
+                        else:
+                            s3_key = None
                     
                     if s3_key:
                         # Create FileRecord immediately
                         file_record_id = str(uuid.uuid4())
                         file_record = FileRecord(
                             id=file_record_id,
-                            user_id=project.user_id,
                             project_id=project.id,
-                            filename=file_path.name,
+                            original_filename=file_path.name,
                             s3_key=s3_key,
-                            file_type=FileType.SOURCE,
+                            file_type=FileType.ORIGINAL_PPT,
+                            content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                             size_bytes=file_path.stat().st_size
                         )
                         db_pre.add(file_record)
@@ -238,12 +242,10 @@ def run_processing_background(
                     # Create AIOutput linked to the FileRecord we created earlier
                     output = AIOutput(
                         id=str(uuid.uuid4()),
-                        user_id=user_id, # We have this from before
                         project_id=project_id,
-                        file_record_id=file_record_id,
-                        slides_data=result.get("slides", []),
-                        settings=params,
-                        status="completed"
+                        slides_data={"slides": result.get("slides", []), "base_name": result.get("base_name")},
+                        config_used=params,
+                        is_approved=False
                     )
                     db_post.add(output)
                     db_post.commit()
@@ -378,7 +380,9 @@ async def process_presentation(
     min_words: int = Form(100),
     max_words_fixed: int = Form(150),
     custom_instructions: Optional[str] = Form(None),
-    project_id: Optional[str] = Form(None)
+    project_id: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     Async upload: returns session_id immediately. Client should poll /api/progress/{session_id}.
@@ -389,6 +393,15 @@ async def process_presentation(
     
     # Run cleanup
     background_tasks.add_task(cleanup_old_files)
+
+    # Check project access if project_id provided
+    if project_id:
+        from app.models.db_models import Project
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
     
     if not file.filename.endswith('.pptx'):
         raise HTTPException(status_code=400, detail="Only .pptx files are supported")

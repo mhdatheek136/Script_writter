@@ -44,7 +44,7 @@ async def upload_file(
         )
     
     # Check access
-    if current_user.role != UserRole.ADMIN and project.user_id != current_user.id:
+    if project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -141,7 +141,7 @@ async def download_file(
     
     # Check access via project
     project = db.query(Project).filter(Project.id == file_record.project_id).first()
-    if current_user.role != UserRole.ADMIN and project.user_id != current_user.id:
+    if project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -189,7 +189,7 @@ async def get_file_content(
     
     # Check access via project
     project = db.query(Project).filter(Project.id == file_record.project_id).first()
-    if current_user.role != UserRole.ADMIN and project.user_id != current_user.id:
+    if project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -239,7 +239,7 @@ async def delete_file(
     
     # Check access via project
     project = db.query(Project).filter(Project.id == file_record.project_id).first()
-    if current_user.role != UserRole.ADMIN and project.user_id != current_user.id:
+    if project.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -276,7 +276,7 @@ async def get_project_image(
     if not project:
          raise HTTPException(status_code=404, detail="Project not found")
 
-    if current_user.role != UserRole.ADMIN and project.user_id != current_user.id:
+    if project.user_id != current_user.id:
          raise HTTPException(status_code=403, detail="Access denied")
 
     s3 = get_s3_service()

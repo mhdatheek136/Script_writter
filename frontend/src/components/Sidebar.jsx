@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const Sidebar = ({
   isCollapsed,
@@ -26,9 +26,26 @@ const Sidebar = ({
     custom_instructions: '',
   });
 
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newName, setNewName] = useState(project?.name || '');
+
   const hasContent = useMemo(() => {
     return project && (project.outputs_count > 0 || (project.ai_outputs && project.ai_outputs.length > 0));
   }, [project]);
+
+  useEffect(() => {
+    if (project?.name) setNewName(project.name);
+  }, [project?.name]);
+
+  const handleRename = async () => {
+    if (!newName.trim()) return;
+    try {
+      await onRenameProject(currentProjectId, newName);
+      setIsRenaming(false);
+    } catch (err) {
+      // toast handled in App.jsx
+    }
+  };
 
   const handleDeleteProject = async () => {
     if (!window.confirm("Delete this project? This cannot be undone.")) return;
@@ -275,19 +292,78 @@ const Sidebar = ({
       <div className={`flex-1 overflow-y-auto px-6 py-8 custom-scrollbar space-y-8 ${isCollapsed ? 'hidden' : 'block'}`}>
 
         {hasContent ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6 text-slate-400">
-              <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-            </div>
-            <h3 className="text-sm font-bold uppercase mb-2 text-slate-800 dark:text-white">Project Locked</h3>
-            <p className="text-xs text-slate-500 mb-8 max-w-[200px]">Source file cannot be changed. Create a new project to use a different file.</p>
+          <div className="flex flex-col h-full">
+            <div className="flex-1 flex flex-col items-center justify-center text-center">
+              <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6 text-slate-400">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+              </div>
 
-            <button
-              onClick={handleDeleteProject}
-              className="px-6 py-3 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-colors text-xs font-bold uppercase tracking-widest"
-            >
-              Delete Project
-            </button>
+              {isRenaming ? (
+                <div className="w-full space-y-4 mb-8">
+                  <input
+                    type="text"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    className="w-full bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 dark:text-white"
+                    placeholder="Project Name"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleRename}
+                      className="flex-1 py-3 rounded-xl bg-soft-teal text-black text-[0.6rem] font-bold uppercase tracking-widest"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setIsRenaming(false)}
+                      className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-[0.6rem] font-bold uppercase tracking-widest"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h3 className="text-sm font-bold uppercase mb-2 text-slate-800 dark:text-white">{project?.name || 'Project Name'}</h3>
+                  <button
+                    onClick={() => { setIsRenaming(true); setNewName(project?.name || ''); }}
+                    className="text-[0.6rem] font-bold text-soft-teal uppercase tracking-widest hover:underline mb-8"
+                  >
+                    Rename Project
+                  </button>
+                </>
+              )}
+
+              <div className="w-full p-6 rounded-2xl bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700/50 mb-8 space-y-4">
+                <h4 className="text-[0.6rem] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] text-left ml-1">Configuration used</h4>
+                <div className="grid grid-cols-2 gap-y-4 gap-x-2">
+                  <div className="text-left">
+                    <p className="text-[0.5rem] text-slate-400 uppercase font-black tracking-widest mb-1 ml-1">Tone</p>
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1">{formData.tone}</p>
+                  </div>
+                  <div className="text-left">
+                    <p className="text-[0.5rem] text-slate-400 uppercase font-black tracking-widest mb-1 ml-1">Style</p>
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1">{formData.narration_style}</p>
+                  </div>
+                  <div className="text-left">
+                    <p className="text-[0.5rem] text-slate-400 uppercase font-black tracking-widest mb-1 ml-1">Audience</p>
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1">{formData.audience_level}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-soft-navy/5 dark:bg-soft-teal/5 border border-soft-navy/10 dark:border-soft-teal/10 mb-8">
+                <p className="text-[0.65rem] text-slate-500 leading-relaxed italic">"Project locked. The source file cannot be modified. To use a different presentation, please create a new project."</p>
+              </div>
+
+              <button
+                onClick={handleDeleteProject}
+                className="w-full py-4 rounded-2xl bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-all text-[0.65rem] font-black uppercase tracking-[0.2em]"
+              >
+                Delete Project
+              </button>
+            </div>
           </div>
         ) : (
           <>
