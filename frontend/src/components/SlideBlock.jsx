@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { getToken } from '../services/auth';
+import { getToken, authFetch } from '../services/auth';
 
 const SlideBlock = ({ slide, tone, narrationStyle, onUpdate, isDarkMode, addToast, isStudioLayout = false }) => {
   // AI editing
@@ -94,18 +94,18 @@ const SlideBlock = ({ slide, tone, narrationStyle, onUpdate, isDarkMode, addToas
     if (!aiRequest.trim()) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/refine-narration', {
+      const response = await authFetch('/api/refine-narration', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           current_text: slide.narration_paragraph,
-          instruction: aiRequest,
-          slide_context: `Slide ${slide.slide_number}: ${slide.original_content}`,
-          tone: tone,
-          style: narrationStyle || 'Human-like'
+          instruction: aiRequest.trim(),
+          slide_context: slide.rewritten_content,
+          tone,
+          style: narrationStyle
         }),
       });
-      if (!response.ok) throw new Error('Failed to refine');
+      if (!response.ok) throw new Error('Failed to refine narration');
       const data = await response.json();
       onUpdate(data.refined_text);
       setAiRequest('');

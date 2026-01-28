@@ -151,7 +151,7 @@ class SlideProcessor:
                         s3_key = f"users/{user_id}/projects/{project_id}/images/{session_id}/{filename}"
                         
                         with open(img, "rb") as f:
-                            success = s3_service.upload_file_obj(f, s3_key, content_type="image/png")
+                            success = s3_service.upload_file_obj(f, s3_key, content_type="image/jpeg")
                         
                         if success:
                             persisted_image_map[idx] = {"type": "s3", "key": s3_key, "filename": filename}

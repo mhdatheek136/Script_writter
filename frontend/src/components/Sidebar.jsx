@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { authFetch } from '../services/auth';
 
 const Sidebar = ({
   isCollapsed,
@@ -50,8 +51,7 @@ const Sidebar = ({
   const handleDeleteProject = async () => {
     if (!window.confirm("Delete this project? This cannot be undone.")) return;
     try {
-      const token = localStorage.getItem('auth_token');
-      await fetch(`/api/projects/${currentProjectId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+      await authFetch(`/api/projects/${currentProjectId}`, { method: 'DELETE' });
       onReset();
       addToast("Project deleted");
     } catch (e) {
@@ -91,7 +91,7 @@ const Sidebar = ({
     // Validate polling function
     const pollProgress = async (sessionId) => {
       try {
-        const response = await fetch(`/api/progress/${sessionId}`);
+        const response = await authFetch(`/api/progress/${sessionId}`);
         if (!response.ok) throw new Error('Failed to fetch progress');
         const update = await response.json();
 
@@ -110,7 +110,7 @@ const Sidebar = ({
 
         if (update.status === 'complete') {
           // Fetch final results
-          const resultResponse = await fetch(`/api/result/${sessionId}`);
+          const resultResponse = await authFetch(`/api/result/${sessionId}`);
           if (!resultResponse.ok) throw new Error('Failed to fetch results');
           const resultData = await resultResponse.json();
 
@@ -128,7 +128,7 @@ const Sidebar = ({
     };
 
     try {
-      const response = await fetch('/api/process', { method: 'POST', body: data });
+      const response = await authFetch('/api/process', { method: 'POST', body: data });
       if (!response.ok) throw new Error(await response.text());
       const responseData = await response.json();
 

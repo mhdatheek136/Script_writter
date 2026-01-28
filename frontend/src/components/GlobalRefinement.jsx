@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { authFetch } from '../services/auth';
 
 const GlobalRefinement = ({ slides, tone, narrationStyle, onUpdate, isDarkMode }) => {
     const [request, setRequest] = useState('');
@@ -15,7 +16,8 @@ const GlobalRefinement = ({ slides, tone, narrationStyle, onUpdate, isDarkMode }
         formData.append('style', narrationStyle || 'Human-like');
 
         try {
-            const response = await fetch('/api/global-rewrite', { method: 'POST', body: formData });
+            const response = await authFetch('/api/global-rewrite', { method: 'POST', body: formData });
+            if (!response.ok) throw new Error('Global update failed');
             const data = await response.json();
             if (data.success) {
                 onUpdate(data.slides);

@@ -575,7 +575,7 @@ async def get_slide_image(session_id: str, filename: str):
     return FileResponse(
         path=str(file_path),
         filename=filename,
-        media_type="image/png"
+        media_type="image/jpeg"
     )
 
 # Mount static files (for CSS and JS)

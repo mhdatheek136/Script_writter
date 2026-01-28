@@ -102,9 +102,9 @@ class PPTXExtractor:
                 pdf_dir.mkdir(parents=True, exist_ok=True)
                 self.temp_files.append(pdf_dir)
                 
-                png_dir = self.temp_dir / "rendered_png"
-                png_dir.mkdir(parents=True, exist_ok=True)
-                self.temp_files.append(png_dir)
+                jpg_dir = self.temp_dir / "rendered_jpg"
+                jpg_dir.mkdir(parents=True, exist_ok=True)
+                self.temp_files.append(jpg_dir)
 
                 soffice_cmd = self._resolve_soffice_cmd()
                 
@@ -139,21 +139,21 @@ class PPTXExtractor:
                 self.temp_files.append(pdf_out)
 
                 logger.info(f"PDF created: {pdf_out}")
-                logger.info("Converting PDF to PNG using pdftoppm...")
+                logger.info("Converting PDF to JPEG using pdftoppm...")
 
-                # Step 2: PDF -> PNG using pdftoppm
+                # Step 2: PDF -> JPEG using pdftoppm
                 pdftoppm_cmd = shutil.which("pdftoppm")
                 if not pdftoppm_cmd:
                     raise FileNotFoundError(
-                        "pdftoppm not found. Install 'poppler-utils' to enable PDF-to-PNG conversion."
+                        "pdftoppm not found. Install 'poppler-utils' to enable PDF-to-JPEG conversion."
                     )
 
-                # Generate PNG files with prefix
-                out_prefix = str(png_dir / "slide")
+                # Generate JPEG files with prefix
+                out_prefix = str(jpg_dir / "slide")
                 result = subprocess.run(
                     [
                         pdftoppm_cmd,
-                        "-png",
+                        "-jpeg",
                         "-r", "150",  # Lower resolution
                         "-scale-to-x", "1280",  # Constrain width
                         "-scale-to-y", "-1",  # Maintain aspect ratio
@@ -165,20 +165,20 @@ class PPTXExtractor:
                     check=True,
                 )
 
-                # Get generated PNG files
-                png_files = list(png_dir.glob("*.png"))
+                # Get generated JPEG files
+                jpg_files = list(jpg_dir.glob("*.jpg"))
                 
                 def _slide_sort_key(p: Path):
                     m = re.search(r"(\d+)(?=\D*$)", p.stem)
                     return int(m.group(1)) if m else 10**9
 
-                png_files = sorted(png_files, key=_slide_sort_key)
+                jpg_files = sorted(jpg_files, key=_slide_sort_key)
                 
                 # Take only the number of slides we expect
-                if len(png_files) > total_slides:
-                    png_files = png_files[:total_slides]
+                if len(jpg_files) > total_slides:
+                    jpg_files = jpg_files[:total_slides]
                 
-                image_paths = [p for p in png_files]
+                image_paths = [p for p in jpg_files]
                 for p in image_paths:
                     self.temp_files.append(p)
 
