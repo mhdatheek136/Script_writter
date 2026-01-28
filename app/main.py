@@ -6,15 +6,21 @@ import tempfile
 import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
+from contextlib import asynccontextmanager
+
 from pydantic import BaseModel
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
-from app.models import ProcessResponse
+from app.schemas import ProcessResponse
 from app.core.slide_processor import SlideProcessor
 from app.output_generator import OutputGenerator
 from app.core.progress_tracker import ProgressStore
+
+# Import new routers
+from app.routers import auth_router, admin_router, projects_router, files_router
 
 # Configure logging
 logging.basicConfig(
@@ -23,7 +29,74 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Slide-to-Narration Rewriter")
+
+def create_default_admin():
+    """Create default admin user if it doesn't exist."""
+    from app.database import SessionLocal
+    from app.models.db_models import User, UserRole
+    from app.auth.security import get_password_hash
+    
+    admin_email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@example.com")
+    admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "changeme123")
+    
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.email == admin_email).first()
+        if not existing:
+            admin = User(
+                email=admin_email,
+                hashed_password=get_password_hash(admin_password),
+                role=UserRole.ADMIN,
+                is_active=True
+            )
+            db.add(admin)
+            db.commit()
+            logger.info(f"Default admin user created: {admin_email}")
+        else:
+            logger.info(f"Admin user already exists: {admin_email}")
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler for startup/shutdown."""
+    # Startup
+    logger.info("Starting up Script Writer application...")
+    
+    # Initialize database
+    from app.database import init_db
+    init_db()
+    logger.info("Database initialized")
+    
+    # Create default admin
+    create_default_admin()
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down...")
+
+
+app = FastAPI(
+    title="Slide-to-Narration Rewriter",
+    lifespan=lifespan
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(auth_router)
+app.include_router(admin_router)
+app.include_router(projects_router)
+app.include_router(files_router)
 
 # Get configuration from environment
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -70,30 +143,117 @@ def run_processing_background(
     file_path: Path,
     params: Dict[str, Any],
     api_key: str,
-    model: str
+    model: str,
+    project_id: Optional[str] = None
 ):
     """
     Background worker to run the slide processor and save results.
     """
     store = ProgressStore()
     
+    # 1. Resolve user and Upload Source File (Fail Fast)
+    user_id = None
+    file_record_id = None
+    
+    if project_id:
+        try:
+            from app.database import SessionLocal
+            from app.models.db_models import Project, FileRecord, FileType
+            from app.services.s3_storage import S3StorageService
+            import datetime
+
+            db_pre = SessionLocal()
+            try:
+                project = db_pre.query(Project).filter(Project.id == project_id).first()
+                if project:
+                    user_id = project.user_id
+                    
+                    # Upload original file to S3 immediately
+                    s3 = S3StorageService()
+                    s3_key = s3.upload_file(
+                        file_path, 
+                        project.user_id, 
+                        project.id, 
+                        "uploads",
+                        file_path.name
+                    )
+                    
+                    if s3_key:
+                        # Create FileRecord immediately
+                        file_record_id = str(uuid.uuid4())
+                        file_record = FileRecord(
+                            id=file_record_id,
+                            user_id=project.user_id,
+                            project_id=project.id,
+                            filename=file_path.name,
+                            s3_key=s3_key,
+                            file_type=FileType.SOURCE,
+                            size_bytes=file_path.stat().st_size
+                        )
+                        db_pre.add(file_record)
+                        
+                        # Update project updated_at
+                        project.updated_at = datetime.datetime.utcnow()
+                        db_pre.commit()
+                        logger.info(f"Uploaded source file and created record {file_record_id} for project {project_id}")
+                    else:
+                        logger.error(f"Failed to upload source file for project {project_id}")
+            except Exception as e:
+                 logger.error(f"Error in pre-processing (upload): {e}")
+            finally:
+                db_pre.close()
+
+        except Exception as e:
+            logger.error(f"Failed to resolve user/project {project_id}: {e}")
+
     try:
         processor = SlideProcessor(api_key, model)
         result = processor.process_pptx(
             file_path,
             session_id=session_id,
+            user_id=user_id,
+            project_id=project_id,
             **params
         )
         
-        # Save result to session file
+        # Save result to session file (local temp backup)
         result_path = temp_output_dir / f"{session_id}_result.json"
         
-        # Inject base_name if missing (processor normally handles it but let's be safe)
+        # Inject base_name if missing
         if "base_name" not in result:
            result["base_name"] = file_path.stem
 
         with open(result_path, "w", encoding="utf-8") as f:
             json.dump(result, f, default=str)
+        
+        # 3. Save AI Output to DB
+        if project_id and file_record_id:
+            try:
+                from app.database import SessionLocal
+                from app.models.db_models import AIOutput
+                import datetime
+                
+                db_post = SessionLocal()
+                try:
+                    # Create AIOutput linked to the FileRecord we created earlier
+                    output = AIOutput(
+                        id=str(uuid.uuid4()),
+                        user_id=user_id, # We have this from before
+                        project_id=project_id,
+                        file_record_id=file_record_id,
+                        slides_data=result.get("slides", []),
+                        settings=params,
+                        status="completed"
+                    )
+                    db_post.add(output)
+                    db_post.commit()
+                    logger.info(f"Saved AI output to project {project_id}")
+                except Exception as e:
+                    logger.error(f"Failed to save AI output: {e}")
+                finally:
+                    db_post.close()
+            except Exception as e:
+                logger.error(f"Failed to open DB for saving output: {e}")
             
         store.update(session_id, "complete", 100, "Ready")
         
@@ -217,7 +377,8 @@ async def process_presentation(
     enable_polishing: bool = Form(True),
     min_words: int = Form(100),
     max_words_fixed: int = Form(150),
-    custom_instructions: Optional[str] = Form(None)
+    custom_instructions: Optional[str] = Form(None),
+    project_id: Optional[str] = Form(None)
 ):
     """
     Async upload: returns session_id immediately. Client should poll /api/progress/{session_id}.
@@ -264,7 +425,8 @@ async def process_presentation(
         session_upload_path,
         params,
         GEMINI_API_KEY,
-        GEMINI_MODEL
+        GEMINI_MODEL,
+        project_id
     )
     
     ProgressStore().update(session_id, "queued", 0, "Request accepted")

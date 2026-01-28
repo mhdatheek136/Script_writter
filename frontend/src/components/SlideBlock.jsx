@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { getToken } from '../services/auth';
 
 const SlideBlock = ({ slide, tone, narrationStyle, onUpdate, isDarkMode, addToast, isStudioLayout = false }) => {
   // AI editing
@@ -9,6 +10,17 @@ const SlideBlock = ({ slide, tone, narrationStyle, onUpdate, isDarkMode, addToas
   // Manual editing
   const [isManualEditing, setIsManualEditing] = useState(false);
   const [manualDraft, setManualDraft] = useState(slide.narration_paragraph || '');
+
+  // Helper for authenticated image loading
+  const getAuthenticatedImageSrc = (url) => {
+    if (!url) return null;
+    const token = getToken();
+    if (url.startsWith('/api/') && token) {
+      const separator = url.includes('?') ? '&' : '?';
+      return `${url}${separator}token=${token}`;
+    }
+    return url;
+  };
 
   // Split Pane State
   // Split Pane State
@@ -149,7 +161,7 @@ const SlideBlock = ({ slide, tone, narrationStyle, onUpdate, isDarkMode, addToas
           {slide.image_url ? (
             <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-lg bg-white dark:bg-black/40">
               <img
-                src={slide.image_url}
+                src={getAuthenticatedImageSrc(slide.image_url)}
                 alt={`Slide ${slide.slide_number}`}
                 className="w-full h-auto object-contain"
                 onError={(e) => {

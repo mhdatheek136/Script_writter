@@ -31,7 +31,13 @@ COPY app/ ./app/
 # Copy the built frontend from Stage 1
 COPY --from=frontend-build /frontend/dist ./frontend/dist
 
+# Create data directory for SQLite database
+RUN mkdir -p /app/data
+
 RUN useradd -m -u 10001 appuser
+
+# Set ownership of data directory
+RUN chown -R appuser:appuser /app/data
 
 EXPOSE 8000
 

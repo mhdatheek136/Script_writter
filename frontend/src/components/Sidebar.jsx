@@ -11,6 +11,8 @@ const Sidebar = ({
   isDarkMode,
   toggleTheme,
   addToast,
+  currentProjectId,
+  project
 }) => {
   const [formData, setFormData] = useState({
     tone: 'Professional',
@@ -23,6 +25,22 @@ const Sidebar = ({
     enable_polishing: true,
     custom_instructions: '',
   });
+
+  const hasContent = useMemo(() => {
+    return project && (project.outputs_count > 0 || (project.ai_outputs && project.ai_outputs.length > 0));
+  }, [project]);
+
+  const handleDeleteProject = async () => {
+    if (!window.confirm("Delete this project? This cannot be undone.")) return;
+    try {
+      const token = localStorage.getItem('auth_token');
+      await fetch(`/api/projects/${currentProjectId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+      onReset();
+      addToast("Project deleted");
+    } catch (e) {
+      addToast("Failed to delete", "error");
+    }
+  };
 
   // UPDATED: options aligned with model.py enums
   const TONE_OPTIONS = ['Professional', 'Friendly', 'Sales', 'Technical'];
@@ -48,6 +66,9 @@ const Sidebar = ({
 
     const data = new FormData();
     data.append('file', file);
+    if (currentProjectId) {
+      data.append('project_id', currentProjectId);
+    }
     Object.keys(formData).forEach((key) => data.append(key, formData[key]));
 
     // Validate polling function
@@ -252,207 +273,226 @@ const Sidebar = ({
 
       {/* Main Configurations - Scrollable */}
       <div className={`flex-1 overflow-y-auto px-6 py-8 custom-scrollbar space-y-8 ${isCollapsed ? 'hidden' : 'block'}`}>
-        {/* File Section */}
-        <section>
-          <LabelWithTooltip label="Presentation" tooltipKey="file" />
-          <div className="relative group">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={(e) => addToast(`File loaded: ${e.target.files?.[0]?.name}`)}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              accept=".pptx"
-            />
-            <div
-              className={`flex items-center gap-4 p-4 rounded-2xl border border-dashed transition-all ${isDarkMode
-                ? 'bg-black/20 border-slate-800 group-hover:border-soft-teal'
-                : 'bg-white border-slate-200 group-hover:border-soft-navy shadow-sm'
-                }`}
+
+        {hasContent ? (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6 text-slate-400">
+              <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+            </div>
+            <h3 className="text-sm font-bold uppercase mb-2 text-slate-800 dark:text-white">Project Locked</h3>
+            <p className="text-xs text-slate-500 mb-8 max-w-[200px]">Source file cannot be changed. Create a new project to use a different file.</p>
+
+            <button
+              onClick={handleDeleteProject}
+              className="px-6 py-3 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-colors text-xs font-bold uppercase tracking-widest"
             >
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                stroke="currentColor"
-                strokeWidth="2"
-                fill="none"
-                className="text-slate-400 group-hover:scale-110 transition-transform"
-              >
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              <span className="text-xs font-bold text-slate-500 truncate">
-                {fileInputRef.current?.files?.[0]?.name || 'Upload .PPTX'}
-              </span>
-            </div>
+              Delete Project
+            </button>
           </div>
-        </section>
-
-        {/* Global Settings */}
-        <section className="space-y-6">
-          <label className="text-[0.6rem] font-black text-slate-500 uppercase tracking-[0.2em] block mb-2">Settings</label>
-
-          {/* Tone */}
-          <div className="relative">
-            <LabelWithTooltip label="Tone" tooltipKey="tone" />
-            <div className="relative">
-              <select name="tone" value={formData.tone} onChange={handleInputChange} className={selectClasses}>
-                {TONE_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          {/* Style */}
-          <div className="relative">
-            <LabelWithTooltip label="Style" tooltipKey="narration_style" />
-            <div className="relative">
-              <select name="narration_style" value={formData.narration_style} onChange={handleInputChange} className={selectClasses}>
-                {NARRATION_STYLE_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          {/* Audience */}
-          <div className="relative">
-            <LabelWithTooltip label="Audience" tooltipKey="audience_level" />
-            <div className="relative">
-              <select name="audience_level" value={formData.audience_level} onChange={handleInputChange} className={selectClasses}>
-                {AUDIENCE_OPTIONS.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          {/* Length */}
-          <div className="pt-2 relative">
-            <LabelWithTooltip label="Length" tooltipKey="dynamic_length" />
-            <div className={`p-1 rounded-xl flex gap-1 ${isDarkMode ? 'bg-black/40' : 'bg-slate-200/50 shadow-inner'}`}>
-              <button
-                onClick={() => setFormData({ ...formData, dynamic_length: true })}
-                className={`flex-1 py-2 rounded-lg text-[0.6rem] font-bold uppercase transition-all ${formData.dynamic_length
-                  ? isDarkMode
-                    ? 'bg-soft-teal text-black'
-                    : 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500'
-                  }`}
-                type="button"
-              >
-                Dynamic
-              </button>
-              <button
-                onClick={() => setFormData({ ...formData, dynamic_length: false })}
-                className={`flex-1 py-2 rounded-lg text-[0.6rem] font-bold uppercase transition-all ${!formData.dynamic_length
-                  ? isDarkMode
-                    ? 'bg-soft-teal text-black'
-                    : 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500'
-                  }`}
-                type="button"
-              >
-                Fixed
-              </button>
-            </div>
-          </div>
-
-          {!formData.dynamic_length && (
-            <div className="grid grid-cols-2 gap-4 animate-soft-in">
-              <div>
-                <label className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-wider block mb-2 ml-1">Min Words</label>
-                <input type="number" name="min_words" value={formData.min_words} onChange={handleInputChange} className={numberClasses} />
-              </div>
-              <div>
-                <label className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-wider block mb-2 ml-1">Max Words</label>
+        ) : (
+          <>
+            <section>
+              <LabelWithTooltip label="Presentation" tooltipKey="file" />
+              <div className="relative group">
                 <input
-                  type="number"
-                  name="max_words_fixed"
-                  value={formData.max_words_fixed}
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={(e) => addToast(`File loaded: ${e.target.files?.[0]?.name}`)}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  accept=".pptx"
+                />
+                <div
+                  className={`flex items-center gap-4 p-4 rounded-2xl border border-dashed transition-all ${isDarkMode
+                    ? 'bg-black/20 border-slate-800 group-hover:border-soft-teal'
+                    : 'bg-white border-slate-200 group-hover:border-soft-navy shadow-sm'
+                    }`}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    fill="none"
+                    className="text-slate-400 group-hover:scale-110 transition-transform"
+                  >
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  <span className="text-xs font-bold text-slate-500 truncate">
+                    {fileInputRef.current?.files?.[0]?.name || 'Upload .PPTX'}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            {/* Global Settings */}
+            <section className="space-y-6">
+              <label className="text-[0.6rem] font-black text-slate-500 uppercase tracking-[0.2em] block mb-2">Settings</label>
+
+              {/* Tone */}
+              <div className="relative">
+                <LabelWithTooltip label="Tone" tooltipKey="tone" />
+                <div className="relative">
+                  <select name="tone" value={formData.tone} onChange={handleInputChange} className={selectClasses}>
+                    {TONE_OPTIONS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none">
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Style */}
+              <div className="relative">
+                <LabelWithTooltip label="Style" tooltipKey="narration_style" />
+                <div className="relative">
+                  <select name="narration_style" value={formData.narration_style} onChange={handleInputChange} className={selectClasses}>
+                    {NARRATION_STYLE_OPTIONS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none">
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Audience */}
+              <div className="relative">
+                <LabelWithTooltip label="Audience" tooltipKey="audience_level" />
+                <div className="relative">
+                  <select name="audience_level" value={formData.audience_level} onChange={handleInputChange} className={selectClasses}>
+                    {AUDIENCE_OPTIONS.map((a) => (
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none">
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Length */}
+              <div className="pt-2 relative">
+                <LabelWithTooltip label="Length" tooltipKey="dynamic_length" />
+                <div className={`p-1 rounded-xl flex gap-1 ${isDarkMode ? 'bg-black/40' : 'bg-slate-200/50 shadow-inner'}`}>
+                  <button
+                    onClick={() => setFormData({ ...formData, dynamic_length: true })}
+                    className={`flex-1 py-2 rounded-lg text-[0.6rem] font-bold uppercase transition-all ${formData.dynamic_length
+                      ? isDarkMode
+                        ? 'bg-soft-teal text-black'
+                        : 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500'
+                      }`}
+                    type="button"
+                  >
+                    Dynamic
+                  </button>
+                  <button
+                    onClick={() => setFormData({ ...formData, dynamic_length: false })}
+                    className={`flex-1 py-2 rounded-lg text-[0.6rem] font-bold uppercase transition-all ${!formData.dynamic_length
+                      ? isDarkMode
+                        ? 'bg-soft-teal text-black'
+                        : 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500'
+                      }`}
+                    type="button"
+                  >
+                    Fixed
+                  </button>
+                </div>
+              </div>
+
+              {!formData.dynamic_length && (
+                <div className="grid grid-cols-2 gap-4 animate-soft-in">
+                  <div>
+                    <label className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-wider block mb-2 ml-1">Min Words</label>
+                    <input type="number" name="min_words" value={formData.min_words} onChange={handleInputChange} className={numberClasses} />
+                  </div>
+                  <div>
+                    <label className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-wider block mb-2 ml-1">Max Words</label>
+                    <input
+                      type="number"
+                      name="max_words_fixed"
+                      value={formData.max_words_fixed}
+                      onChange={handleInputChange}
+                      className={numberClasses}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Toggles */}
+              <div className="space-y-3 pt-2">
+                <label className="flex items-center group cursor-pointer relative">
+                  <input
+                    type="checkbox"
+                    name="include_speaker_notes"
+                    checked={formData.include_speaker_notes}
+                    onChange={handleInputChange}
+                    className="hidden"
+                  />
+                  <div className={`w-10 h-6 rounded-full relative transition-all ${formData.include_speaker_notes ? 'bg-soft-teal' : 'bg-slate-300 dark:bg-slate-800'}`}>
+                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${formData.include_speaker_notes ? 'translate-x-4' : ''}`} />
+                  </div>
+                  <div className="ml-3 w-full">
+                    <LabelWithTooltip label="Contextual Notes" tooltipKey="contextual" />
+                  </div>
+                </label>
+
+                <label className="flex items-center group cursor-pointer relative">
+                  <input
+                    type="checkbox"
+                    name="enable_polishing"
+                    checked={formData.enable_polishing}
+                    onChange={handleInputChange}
+                    className="hidden"
+                  />
+                  <div className={`w-10 h-6 rounded-full relative transition-all ${formData.enable_polishing ? 'bg-soft-teal' : 'bg-slate-300 dark:bg-slate-800'}`}>
+                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${formData.enable_polishing ? 'translate-x-4' : ''}`} />
+                  </div>
+                  <div className="ml-3 w-full">
+                    <LabelWithTooltip label="AI Polishing" tooltipKey="polishing" />
+                  </div>
+                </label>
+              </div>
+
+              {/* Custom instructions */}
+              <div className="pt-4">
+                <LabelWithTooltip label="Custom Instructions" tooltipKey="custom" />
+                <textarea
+                  name="custom_instructions"
+                  value={formData.custom_instructions}
                   onChange={handleInputChange}
-                  className={numberClasses}
+                  placeholder="e.g., keep it simple, add a quick hook, avoid buzzwords…"
+                  className={`${baseInput} h-24 resize-none leading-relaxed p-4`}
                 />
               </div>
-            </div>
-          )}
-
-          {/* Toggles */}
-          <div className="space-y-3 pt-2">
-            <label className="flex items-center group cursor-pointer relative">
-              <input
-                type="checkbox"
-                name="include_speaker_notes"
-                checked={formData.include_speaker_notes}
-                onChange={handleInputChange}
-                className="hidden"
-              />
-              <div className={`w-10 h-6 rounded-full relative transition-all ${formData.include_speaker_notes ? 'bg-soft-teal' : 'bg-slate-300 dark:bg-slate-800'}`}>
-                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${formData.include_speaker_notes ? 'translate-x-4' : ''}`} />
-              </div>
-              <div className="ml-3 w-full">
-                <LabelWithTooltip label="Contextual Notes" tooltipKey="contextual" />
-              </div>
-            </label>
-
-            <label className="flex items-center group cursor-pointer relative">
-              <input
-                type="checkbox"
-                name="enable_polishing"
-                checked={formData.enable_polishing}
-                onChange={handleInputChange}
-                className="hidden"
-              />
-              <div className={`w-10 h-6 rounded-full relative transition-all ${formData.enable_polishing ? 'bg-soft-teal' : 'bg-slate-300 dark:bg-slate-800'}`}>
-                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${formData.enable_polishing ? 'translate-x-4' : ''}`} />
-              </div>
-              <div className="ml-3 w-full">
-                <LabelWithTooltip label="AI Polishing" tooltipKey="polishing" />
-              </div>
-            </label>
-          </div>
-
-          {/* Custom instructions */}
-          <div className="pt-4">
-            <LabelWithTooltip label="Custom Instructions" tooltipKey="custom" />
-            <textarea
-              name="custom_instructions"
-              value={formData.custom_instructions}
-              onChange={handleInputChange}
-              placeholder="e.g., keep it simple, add a quick hook, avoid buzzwords…"
-              className={`${baseInput} h-24 resize-none leading-relaxed p-4`}
-            />
-          </div>
-        </section>
+            </section>
+          </>
+        )}
       </div>
 
       {/* STICKY Generate Button at Bottom */}
-      <div
+      < div
         className={`p-6 border-t ${isDarkMode ? 'border-soft-border-dark bg-ui-bg-dark/80' : 'border-soft-border bg-slate-50/80'
-          } backdrop-blur-md ${isCollapsed ? 'hidden' : 'block'}`}
+          } backdrop-blur-md ${isCollapsed || hasContent ? 'hidden' : 'block'}`}
       >
         <button
           onClick={handleProcess}
@@ -461,32 +501,34 @@ const Sidebar = ({
             }`}
           type="button"
         >
-          {processingStatus.active ? 'Processing...' : 'Generate Script'}
+          {processingStatus.active ? 'Processing...' : (currentProjectId ? 'Update Project Script' : 'Generate Script')}
         </button>
-      </div>
+      </div >
 
       {/* Theme Toggle Button - Separate when sidebar is collapsed */}
-      {isCollapsed && (
-        <div className="p-6 flex items-center justify-center border-t border-soft-border dark:border-soft-border-dark">
-          <button
-            onClick={toggleTheme}
-            className="p-3 rounded-xl border hover:bg-slate-100 dark:hover:bg-slate-800 transition-all text-slate-500 flex-shrink-0"
-            title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            type="button"
-          >
-            {isDarkMode ? (
-              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none">
-                <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m11.314 11.314l.707.707" />
-                <circle cx="12" cy="12" r="4" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none">
-                <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
-              </svg>
-            )}
-          </button>
-        </div>
-      )}
+      {
+        isCollapsed && (
+          <div className="p-6 flex items-center justify-center border-t border-soft-border dark:border-soft-border-dark">
+            <button
+              onClick={toggleTheme}
+              className="p-3 rounded-xl border hover:bg-slate-100 dark:hover:bg-slate-800 transition-all text-slate-500 flex-shrink-0"
+              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              type="button"
+            >
+              {isDarkMode ? (
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none">
+                  <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m11.314 11.314l.707.707" />
+                  <circle cx="12" cy="12" r="4" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none">
+                  <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+                </svg>
+              )}
+            </button>
+          </div>
+        )
+      }
 
       {/* Sidebar Collapse Button */}
       <button
@@ -499,7 +541,7 @@ const Sidebar = ({
           <path d="M15 18l-6-6 6-6" />
         </svg>
       </button>
-    </aside>
+    </aside >
   );
 };
 

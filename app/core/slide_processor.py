@@ -9,6 +9,7 @@ from typing import List, Dict, Optional, Any
 from app.services.pptx_extractor import PPTXExtractor
 from app.services.llm_client import LLMClient
 from app.core.progress_tracker import ProgressStore
+from app.services.s3_storage import get_s3_service
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,9 @@ class SlideProcessor:
         min_words: Optional[int] = None,
         max_words_fixed: Optional[int] = None,
         custom_instructions: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        user_id: Optional[int] = None,
+        project_id: Optional[str] = None
     ) -> Dict:
         """
         Main processing pipeline: convert PPTX, process slides, generate narration.
@@ -134,27 +137,51 @@ class SlideProcessor:
             logger.info("\n[STEP 1] Converting PPTX to images and extracting speaker notes...")
             image_paths, speaker_notes_list, original_text_list = self.extractor.pptx_to_images(pptx_path)
 
-            # Persist images if we have them and a session ID
-            # Target dir: {TEMP_BASE_DIR}/temp_outputs/{session_id}/images
-            persisted_image_paths = []
-            if session_id and image_paths:
-                # Use same logic as main.py
+            # Persist images: Upload to S3 if configured, or copy to temp if fallback
+            persisted_image_map = {} # Maps index -> S3 Key or Local Path
+            s3_service = get_s3_service()
+            use_s3 = s3_service.is_configured() and user_id and project_id
+
+            if use_s3 and image_paths:
+                logger.info(f"DEBUG: Uploading {len(image_paths)} images to S3 for Project {project_id}")
+                for idx, img in enumerate(image_paths):
+                    try:
+                        filename = img.name
+                        # Structure: users/{user_id}/projects/{project_id}/images/{session_id}/{filename}
+                        s3_key = f"users/{user_id}/projects/{project_id}/images/{session_id}/{filename}"
+                        
+                        with open(img, "rb") as f:
+                            success = s3_service.upload_file_obj(f, s3_key, content_type="image/png")
+                        
+                        if success:
+                            persisted_image_map[idx] = {"type": "s3", "key": s3_key, "filename": filename}
+                            logger.info(f"DEBUG: Uploaded image {idx+1} to S3: {s3_key}")
+                        else:
+                            logger.error(f"DEBUG: Failed to upload image {idx+1} to S3")
+                    except Exception as upload_err:
+                        logger.error(f"DEBUG: Error uploading image {img} to S3: {upload_err}")
+
+            # Fallback to local persistence if S3 didn't cover it (or failed)
+            # Only do local if S3 wasn't attempted or if we want dual persistence (optional, let's skip dual)
+            if not persisted_image_map and session_id and image_paths:
+                 # Local persistence logic (same as before) for fallback/dev
                 base_tmp = Path(os.getenv("TEMP_BASE_DIR", "/tmp"))
                 session_img_dir = base_tmp / "temp_outputs" / session_id / "images"
                 session_img_dir.mkdir(parents=True, exist_ok=True)
                 
-                logger.info(f"DEBUG: Persisting {len(image_paths)} images to {session_img_dir}")
+                logger.info(f"DEBUG: Persisting {len(image_paths)} images to local: {session_img_dir}")
                 
                 for idx, img in enumerate(image_paths):
                     try:
                         dest = session_img_dir / img.name
                         shutil.copy2(img, dest)
-                        persisted_image_paths.append(str(dest))
-                        logger.info(f"DEBUG: Saved image {idx+1} to {dest}")
+                        persisted_image_map[idx] = {"type": "local", "path": str(dest), "filename": img.name}
+                        logger.info(f"DEBUG: Saved image {idx+1} to local: {dest}")
                     except Exception as copy_err:
                         logger.error(f"DEBUG: Failed to copy image {img} to {dest}: {copy_err}")
             else:
-                 logger.warning(f"DEBUG: Skipping persistence. session_id={session_id}, image_paths count={len(image_paths)}")
+                 if not persisted_image_map:
+                    logger.warning(f"DEBUG: Skipping persistence. session_id={session_id}, image_paths count={len(image_paths)}")
 
             
             # If conversion failed fully (no images), we might have text only
@@ -199,12 +226,22 @@ class SlideProcessor:
                     
                     # Store image URL/Path for frontend
                     image_url = ""
-                    if i < len(persisted_image_paths):
-                        filename = Path(persisted_image_paths[i]).name
-                        image_url = f"/api/images/{session_id}/{filename}"
-                        logger.info(f"DEBUG: Slide {slide_num} assigned image_url: {image_url}")
+                    if i in persisted_image_map:
+                        img_info = persisted_image_map[i]
+                        if img_info["type"] == "s3":
+                            # Return API endpoint for S3 image
+                            # /api/files/image/{project_id}/{session_id}/{filename}
+                            # We assume project_id and session_id are available
+                            filename = img_info["filename"]
+                            image_url = f"/api/files/image/{project_id}/{session_id}/{filename}"
+                            logger.info(f"DEBUG: Slide {slide_num} assigned S3 URL: {image_url}")
+                        else:
+                            # Local file
+                            filename = img_info["filename"]
+                            image_url = f"/api/images/{session_id}/{filename}"
+                            logger.info(f"DEBUG: Slide {slide_num} assigned local URL: {image_url}")
                     else:
-                        logger.warning(f"DEBUG: Slide {slide_num} has no persisted image (idx {i} >= {len(persisted_image_paths)})")
+                        logger.warning(f"DEBUG: Slide {slide_num} has no persisted image")
 
                     slide_results.append(
                         {

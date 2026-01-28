@@ -11,6 +11,18 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
       MAX_SLIDES: ${MAX_SLIDES:-30}
+
+      # JWT
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
+      # Database
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./data/script_writer.db}
+      # Admin
+      DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-admin@example.com}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-changeme123}
+    volumes:
+      - app_data:/app/data
     restart: unless-stopped
 
   app-dev:
@@ -25,7 +37,27 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
       MAX_SLIDES: ${MAX_SLIDES:-30}
+      # AWS S3
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
+      S3_BUCKET: ${S3_BUCKET:-script-writer-media}
+      # JWT
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
+      # Database
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./data/script_writer.db}
+      # Admin
+      DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-admin@example.com}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-changeme123}
     volumes:
       - ./app:/app/app
+      - app_data:/app/data
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    profiles: ["dev"]
+    profiles: [ "dev" ]
+
+volumes:
+  app_data:
+
+
